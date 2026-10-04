@@ -314,6 +314,8 @@ function Anees() {
   };
 
   const np = nextPrayer();
+  const hydrated = useHydrated();
+  const clock = hydrated ? clockStrings(new Date()) : null;
 
   // ---------- UI ----------
   return (
