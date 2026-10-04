@@ -68,7 +68,7 @@ function Anees() {
     try { recRef.current?.abort(); } catch { /* */ }
     const r = new Ctor();
     r.lang = "ar-SA"; r.continuous = false; r.interimResults = false;
-    r.onresult = (e) => { const t = e.results[0][0].transcript; setHeard(t); handleRef.current(t); };
+    r.onresult = (e) => { const t = e.results[0]![0]!.transcript; setHeard(t); handleRef.current(t); };
     r.onend = () => setListening(false);
     r.onerror = () => setListening(false);
     recRef.current = r;
@@ -122,7 +122,7 @@ function Anees() {
     playQueue(s.ayahs.map((a) => ({ url: a.audio, label: `${s.name} — آية ${a.numberInSurah}` })));
   }, [playQueue]);
 
-  const openAthkar = (k: string) => { setView("athkar"); setAthkarKey(k); playQueue(ATHKAR[k].tracks); };
+  const openAthkar = (k: string) => { setView("athkar"); setAthkarKey(k); playQueue(ATHKAR[k]!.tracks); };
   const openRadio = () => { setView("radio"); playQueue(RADIO.flatMap((r) => r.tracks)); };
 
   const nextPrayer = useCallback(() => {
@@ -130,7 +130,7 @@ function Anees() {
     const now = new Date();
     for (const p of [...PRAYERS, "Fajr+"]) {
       const key = p.replace("+", "");
-      const [h, m] = timings[key].split(":").map(Number);
+      const [h, m] = timings[key]!.split(":").map(Number) as [number, number];
       const d = new Date(now); d.setHours(h, m, 0, 0);
       if (p === "Fajr+") d.setDate(d.getDate() + 1);
       if (d > now) { const mins = Math.round((d.getTime() - now.getTime()) / 60000); return { key, h: Math.floor(mins / 60), m: mins % 60 }; }
@@ -143,11 +143,11 @@ function Anees() {
     const c = PRAYER_CLIPS;
     const seq: Track[] = [
       { url: c.nextPrayer, label: "الصلاة القادمة" },
-      { url: c.names[np.key], label: PRAYER_AR[np.key] },
+      { url: c.names[np.key] ?? "", label: PRAYER_AR[np.key] ?? "" },
       { url: c.after, label: "بعد" },
       ...(np.h ? [{ url: c.numbers[np.h] ?? "", label: `${np.h}` }, { url: c.hour, label: "ساعة" }] : []),
       { url: c.numbers[np.m] ?? "", label: `${np.m}` }, { url: c.minute, label: "دقيقة" },
-    ];
+    ] as Track[];
     playQueue(seq);
   }, [nextPrayer, playQueue]);
 
@@ -166,7 +166,7 @@ function Anees() {
     const t = setInterval(() => {
       const now = new Date(); const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const p = PRAYERS.find((k) => timings[k] === hm);
-      if (p && last !== hm) { last = hm; setAzanAlert(PRAYER_AR[p]); playQueue([{ url: AZAN_URL, label: `أذان ${PRAYER_AR[p]}` }]); }
+      if (p && last !== hm) { last = hm; setAzanAlert(PRAYER_AR[p] ?? ""); playQueue([{ url: AZAN_URL, label: `أذان ${PRAYER_AR[p]}` }]); }
     }, 20000);
     return () => clearInterval(t);
   }, [timings, playQueue]);
@@ -283,7 +283,7 @@ function Anees() {
               <BigBtn key={k} active={k === athkarKey} onClick={() => openAthkar(k)}>{v.title}</BigBtn>
             ))}
           </div>
-          <List tracks={ATHKAR[athkarKey].tracks} current={playing ? nowLabel : ""} onPick={(i) => playQueue(ATHKAR[athkarKey].tracks, i)} sub="الشَّيْخُ مِشَارِي العَفَاسِي" />
+          <List tracks={ATHKAR[athkarKey]!.tracks} current={playing ? nowLabel : ""} onPick={(i) => playQueue(ATHKAR[athkarKey]!.tracks, i)} sub="الشَّيْخُ مِشَارِي العَفَاسِي" />
         </section>
       )}
 
@@ -298,7 +298,7 @@ function Anees() {
             {RADIO.map((r) => (
               <button key={r.topic} onClick={() => playQueue(r.tracks)} className="rounded-2xl bg-muted p-4 text-right">
                 <p className="text-2xl font-bold">{r.topic}</p>
-                <p className="text-lg text-muted-foreground">{r.tracks[0].label}</p>
+                <p className="text-lg text-muted-foreground">{r.tracks[0]!.label}</p>
               </button>
             ))}
           </div>
