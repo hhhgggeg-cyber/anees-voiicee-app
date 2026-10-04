@@ -56,8 +56,12 @@ function Anees() {
   const [surah, setSurah] = useState<{ name: string; ayahs: Ayah[] } | null>(null);
   const [athkarKey, setAthkarKey] = useState("morning");
 
-  const [cityId, setCityId] = useState("tripoli");
-  const city = CITIES.find((c) => c.id === cityId)!;
+  const [cityId, setCityId] = useState("");
+  const city = CITIES.find((c) => c.id === cityId) ?? null;
+  const [geoError, setGeoError] = useState("");
+  const [tz, setTz] = useState<string | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
   const [timings, setTimings] = useState<Record<string, string> | null>(null);
   const [azanAlert, setAzanAlert] = useState("");
   const [heading, setHeading] = useState<number | null>(null);
@@ -155,23 +159,32 @@ function Anees() {
 
   const nextPrayer = useCallback(() => {
     if (!timings) return null;
-    const now = new Date();
+    // "now" expressed as wall-clock time in the location's own timezone
+    const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
     for (const p of [...PRAYERS, "Fajr+"]) {
       const key = p.replace("+", "");
       const [h, m] = timings[key]!.split(":").map(Number) as [number, number];
       const d = new Date(now); d.setHours(h, m, 0, 0);
       if (p === "Fajr+") d.setDate(d.getDate() + 1);
-      if (d > now) { const mins = Math.round((d.getTime() - now.getTime()) / 60000); return { key, h: Math.floor(mins / 60), m: mins % 60 }; }
+      if (d > now) { const secs = Math.floor((d.getTime() - now.getTime()) / 1000); const mins = Math.ceil(secs / 60); return { key, h: Math.floor(mins / 60), m: mins % 60, s: secs % 60, secs }; }
     }
     return null;
-  }, [timings]);
+  }, [timings, tz]);
 
   const locate = (force = false) => {
-    if ((geoTried.current && !force) || !navigator.geolocation) return;
-    geoTried.current = true; startLoading("جَارٍ تَحْدِيدُ مَوْقِعِكَ...");
+    if (geoTried.current && !force) return;
+    geoTried.current = true;
+    if (!navigator.geolocation) { setGeoError("جِهَازُكَ لَا يَدْعَمُ تَحْدِيدَ المَوْقِعِ. اخْتَرْ مَدِينَتَكَ يَدَوِيًّا."); return; }
+    setGeoError(""); startLoading("جَارٍ تَحْدِيدُ مَوْقِعِكَ...");
     navigator.geolocation.getCurrentPosition(
-      (p) => { setCoords({ lat: p.coords.latitude, lon: p.coords.longitude }); setLoading(""); },
-      () => setLoading(""), { timeout: 10000 },
+      (p) => { setCoords({ lat: p.coords.latitude, lon: p.coords.longitude }); setCityId(""); setLoading(""); },
+      (e) => {
+        setLoading(""); chime(1);
+        setGeoError(e.code === 1
+          ? "تَمَّ رَفْضُ إِذْنِ المَوْقِعِ. نَحْتَاجُ مَوْقِعَكَ لِحِسَابِ مَوَاقِيتِ الصَّلَاةِ بِدِقَّةٍ. فَعِّلِ الإِذْنَ ثُمَّ أَعِدِ المُحَاوَلَةَ، أَوِ اخْتَرْ مَدِينَتَكَ."
+          : "تَعَذَّرَ تَحْدِيدُ مَوْقِعِكَ. أَعِدِ المُحَاوَلَةَ أَوِ اخْتَرْ مَدِينَتَكَ يَدَوِيًّا.");
+      },
+      { timeout: 15000, enableHighAccuracy: true, maximumAge: 300000 },
     );
   };
   const playPrayerClip = (key: string) => {
@@ -206,27 +219,32 @@ function Anees() {
   const openPrayer = () => { setView("prayer"); locate(); if (timings) announcePrayer(); else pendingAnnounce.current = true; };
 
   useEffect(() => {
-    setTimings(null); startLoading("جَارٍ تَحْمِيلُ مَوَاقِيتِ الصَّلَاةِ...");
+    setTimings(null); setTz(null);
+    if (!coords && !city) return;
+    startLoading("جَارٍ تَحْمِيلُ مَوَاقِيتِ الصَّلَاةِ...");
+    const ts = Math.floor(Date.now() / 1000);
     const url = coords
-      ? `https://api.aladhan.com/v1/timings?latitude=${coords.lat}&longitude=${coords.lon}&method=3`
-      : `https://api.aladhan.com/v1/timingsByCity?city=${city.city}&country=${city.country}&method=3`;
-    fetch(url).then((r) => r.json()).then((d) => setTimings(d.data.timings)).catch(() => {}).finally(() => setLoading(""));
-  }, [city.city, city.country, coords]);
+      ? `https://api.aladhan.com/v1/timings/${ts}?latitude=${coords.lat}&longitude=${coords.lon}&method=3`
+      : `https://api.aladhan.com/v1/timingsByCity/${ts}?city=${city!.city}&country=${city!.country}&method=3`;
+    fetch(url).then((r) => r.json()).then((d) => { setTz(d.data.meta?.timezone ?? null); setTimings(d.data.timings); })
+      .catch(() => setGeoError("تَعَذَّرَ تَحْمِيلُ المَوَاقِيتِ. تَحَقَّقْ مِنَ الإِنْتَرْنِتِ وَأَعِدِ المُحَاوَلَةَ."))
+      .finally(() => setLoading(""));
+  }, [city?.city, city?.country, coords]);
 
   // Azan alert
   useEffect(() => {
     if (!timings) return;
     let last = "";
     const t = setInterval(() => {
-      const now = new Date(); const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date(); const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const p = PRAYERS.find((k) => timings[k] === hm);
       if (p && last !== hm) { last = hm; setAzanAlert(PRAYER_AR[p] ?? ""); playQueue([{ url: AZAN_URL, label: `أذان ${PRAYER_AR[p]}` }]); }
     }, 1000);
     return () => clearInterval(t);
-  }, [timings, playQueue]);
+  }, [timings, tz, playQueue]);
 
   // Qibla
-  const qibla = coords ? qiblaBearing(coords.lat, coords.lon) : qiblaBearing(city.lat, city.lon);
+  const qibla = coords ? qiblaBearing(coords.lat, coords.lon) : city ? qiblaBearing(city.lat, city.lon) : 0;
   const openQibla = async () => {
     setView("qibla"); qiblaOkRef.current = false;
     const dirs = ["الشمال", "الشمال الشرقي", "الشرق", "الجنوب الشرقي", "الجنوب", "الجنوب الغربي", "الغرب", "الشمال الغربي"];
@@ -313,7 +331,7 @@ function Anees() {
           <Card title="القُرْآنُ الكَرِيمُ" sub="الشَّيْخُ أَحْمَدُ العَجَمِي" icon="📖" onClick={() => openSurah(1)} />
           <Card title="الأَذْكَارُ" sub="الشَّيْخُ مِشَارِي العَفَاسِي" icon="📿" onClick={() => openAthkar("morning")} />
           <Card title="المُحَاضَرَاتُ (رَادْيُو الدُّرُوسِ وَالمَوَاعِظِ)" sub="الشَّيْخُ ابْنُ عُثَيْمِين" icon="📻" onClick={openRadio} />
-          <Card title="مَوَاقِيتُ الصَّلَاةِ وَالقِبْلَةِ" sub={city.ar} icon="🕌" onClick={openPrayer} />
+          <Card title="مَوَاقِيتُ الصَّلَاةِ وَالقِبْلَةِ" sub={coords ? "📍 مَوْقِعُكَ الحَالِيُّ" : city?.ar ?? "حَسَبَ مَوْقِعِكَ"} icon="🕌" onClick={openPrayer} />
         </div>
       )}
 
@@ -373,13 +391,19 @@ function Anees() {
       {view === "prayer" && (
         <section className="grid gap-4">
           <div className="rounded-3xl border-4 border-gold bg-card p-6 text-card-foreground">
-            <select value={cityId} onChange={(e) => setCityId(e.target.value)} className="mb-4 w-full rounded-2xl border-4 border-gold bg-card px-4 py-3 text-2xl">
+            {geoError && (
+              <div role="alert" aria-live="assertive" className="mb-4 rounded-2xl border-4 border-live bg-muted p-5 text-2xl font-bold leading-relaxed">
+                ⚠️ {geoError}
+              </div>
+            )}
+            <select value={cityId} onChange={(e) => { setCityId(e.target.value); if (e.target.value) { setCoords(null); setGeoError(""); } }} className="mb-4 w-full rounded-2xl border-4 border-gold bg-card px-4 py-3 text-2xl">
+              <option value="">— اخْتَرْ مَدِينَتَكَ يَدَوِيًّا —</option>
               {CITIES.map((c) => <option key={c.id} value={c.id}>{c.ar}</option>)}
             </select>
-            <BigBtn onClick={() => { geoTried.current = false; locate(true); }}>📍 اسْتَخْدِمْ مَوْقِعِي الحَالِيَّ {coords ? "✅" : ""}</BigBtn>
+            <BigBtn onClick={() => { geoTried.current = false; locate(true); }}>📍 {geoError ? "أَعِدِ المُحَاوَلَةَ — " : ""}اسْتَخْدِمْ مَوْقِعِي الحَالِيَّ {coords ? "✅" : ""}</BigBtn>
             {np && (
               <p className="my-4 text-center text-3xl font-bold text-primary">
-                الصَّلَاةُ القَادِمَةُ: {PRAYER_AR[np.key]} بَعْدَ {np.h ? `${np.h} سَاعَة و` : ""}{np.m} دَقِيقَة
+                الصَّلَاةُ القَادِمَةُ: {PRAYER_AR[np.key]} بَعْدَ <span dir="ltr" className="tabular-nums">{String(Math.floor(np.secs / 3600)).padStart(2, "0")}:{String(Math.floor((np.secs % 3600) / 60)).padStart(2, "0")}:{String(np.secs % 60).padStart(2, "0")}</span>
               </p>
             )}
             <div className="grid gap-2">
@@ -387,7 +411,7 @@ function Anees() {
                 <button key={p} onClick={() => (p === "Sunrise" ? chime(1) : playPrayerClip(p))} className={`flex min-h-20 justify-between rounded-2xl p-5 text-right text-3xl font-bold ${np?.key === p ? "bg-gold text-gold-foreground" : "bg-muted"}`}>
                   <span>{p === "Sunrise" ? "الشُّرُوقُ" : PRAYER_AR[p]}</span><span>{fmt12(timings[p] ?? "")}</span>
                 </button>
-              )) : <Spinner label="جَارٍ تَحْمِيلُ المَوَاقِيتِ..." />}
+              )) : (coords || city) ? <Spinner label="جَارٍ تَحْمِيلُ المَوَاقِيتِ..." /> : <p className="text-center text-2xl">اسْمَحْ بِتَحْدِيدِ مَوْقِعِكَ أَوِ اخْتَرْ مَدِينَتَكَ لِعَرْضِ المَوَاقِيتِ.</p>}
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <BigBtn onClick={announcePrayer}>🔊 اسْتَمِعْ لِلْمَوْعِدِ</BigBtn>
@@ -407,7 +431,7 @@ function Anees() {
               <div className="absolute left-1/2 top-16 h-24 w-3 -translate-x-1/2 rounded-full bg-primary" />
             </div>
           </div>
-          <p className="text-2xl">القِبْلَةُ: {Math.round(qibla)}° — {city.ar}</p>
+          <p className="text-2xl">القِبْلَةُ: {Math.round(qibla)}° — {coords ? "مَوْقِعُكَ الحَالِيُّ" : city?.ar ?? "حَدِّدْ مَوْقِعَكَ أَوَّلًا"}</p>
           {heading == null && <p className="text-xl">افْتَحِ التَّطْبِيقَ مِنَ الهَاتِفِ لِتَفْعِيلِ البُوصْلَةِ</p>}
         </section>
       )}
