@@ -25,6 +25,16 @@ type Ayah = { text: string; audio: string; numberInSurah: number };
 type SurahMeta = { number: number; name: string };
 const PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
+// Clock & date formatters (device's own timezone)
+const fmtTime = new Intl.DateTimeFormat("ar", { hour: "numeric", minute: "2-digit", hour12: true });
+const fmtHijri = new Intl.DateTimeFormat("ar-SA-u-ca-islamic-umalqura", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const fmtGreg = new Intl.DateTimeFormat("ar-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const clockStrings = (d: Date) => ({
+  time: fmtTime.format(d),
+  hijri: fmtHijri.format(d),
+  greg: fmtGreg.format(d),
+});
+
 type SR = {
   lang: string; continuous: boolean; interimResults: boolean;
   start: () => void; stop: () => void; abort: () => void;
