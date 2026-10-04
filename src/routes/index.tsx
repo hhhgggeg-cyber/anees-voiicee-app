@@ -29,7 +29,7 @@ type SR = {
   lang: string; continuous: boolean; interimResults: boolean;
   start: () => void; stop: () => void; abort: () => void;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onend: (() => void) | null; onerror: (() => void) | null;
+  onend: (() => void) | null; onspeechend?: (() => void) | null; onerror: (() => void) | null;
 };
 
 function Anees() {
@@ -47,6 +47,10 @@ function Anees() {
   const [idx, setIdx] = useState(0);
   const [repeat, setRepeat] = useState(false);
   const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState("");
+  const startLoading = (msg: string) => { setLoading(msg); chime(1); };
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const geoTried = useRef(false);
 
   const [surahs, setSurahs] = useState<SurahMeta[]>([]);
   const [surah, setSurah] = useState<{ name: string; ayahs: Ayah[] } | null>(null);
@@ -82,8 +86,9 @@ function Anees() {
     try { recRef.current?.abort(); } catch { /* */ }
     const r = new Ctor();
     r.lang = "ar-SA"; r.continuous = false; r.interimResults = false;
-    r.onresult = (e) => { const t = e.results[0]![0]!.transcript; setHeard(t); handleRef.current(t); };
-    r.onend = () => setListening(false);
+    r.onspeechend = () => startLoading("جَارٍ فَهْمُ كَلَامِكَ...");
+    r.onresult = (e) => { setLoading(""); const t = e.results[0]![0]!.transcript; setHeard(t); handleRef.current(t); };
+    r.onend = () => { setListening(false); setLoading((l) => (l.startsWith("جَارٍ فَهْمُ") ? "" : l)); };
     r.onerror = () => setListening(false);
     recRef.current = r;
     try { r.start(); setListening(true); } catch { setListening(false); }
@@ -138,8 +143,8 @@ function Anees() {
 
   // ---------- modules ----------
   const openSurah = useCallback(async (n: number) => {
-    setView("quran"); setSurah(null);
-    const d = await fetch(`https://api.alquran.cloud/v1/surah/${n}/ar.ahmedajamy`).then((r) => r.json());
+    setView("quran"); setSurah(null); startLoading("جَارٍ تَحْمِيلُ السُّورَةِ...");
+    const d = await fetch(`https://api.alquran.cloud/v1/surah/${n}/ar.ahmedajamy`).then((r) => r.json()).finally(() => setLoading(""));
     const s = { name: d.data.name, ayahs: d.data.ayahs as Ayah[] };
     setSurah(s);
     playQueue(s.ayahs.map((a) => ({ url: a.audio, label: `${s.name} — آية ${a.numberInSurah}` })));
@@ -161,6 +166,18 @@ function Anees() {
     return null;
   }, [timings]);
 
+  const locate = (force = false) => {
+    if ((geoTried.current && !force) || !navigator.geolocation) return;
+    geoTried.current = true; startLoading("جَارٍ تَحْدِيدُ مَوْقِعِكَ...");
+    navigator.geolocation.getCurrentPosition(
+      (p) => { setCoords({ lat: p.coords.latitude, lon: p.coords.longitude }); setLoading(""); },
+      () => setLoading(""), { timeout: 10000 },
+    );
+  };
+  const playPrayerClip = (key: string) => {
+    const clip = getClip(key);
+    if (clip) playQueue([{ url: clip, label: PRAYER_AR[key] ?? "" }]); else chime(PRAYERS.indexOf(key) + 1);
+  };
   const pendingAnnounce = useRef(false);
   const announcePrayer = useCallback(() => {
     const np = nextPrayer(); if (!np) return;
@@ -170,13 +187,15 @@ function Anees() {
   }, [nextPrayer, playQueue, listenLater]);
 
   useEffect(() => { if (timings && pendingAnnounce.current) { pendingAnnounce.current = false; announcePrayer(); } }, [timings, announcePrayer]);
-  const openPrayer = () => { setView("prayer"); if (timings) announcePrayer(); else pendingAnnounce.current = true; };
+  const openPrayer = () => { setView("prayer"); locate(); if (timings) announcePrayer(); else pendingAnnounce.current = true; };
 
   useEffect(() => {
-    setTimings(null);
-    fetch(`https://api.aladhan.com/v1/timingsByCity?city=${city.city}&country=${city.country}&method=3`)
-      .then((r) => r.json()).then((d) => setTimings(d.data.timings)).catch(() => {});
-  }, [city.city, city.country]);
+    setTimings(null); startLoading("جَارٍ تَحْمِيلُ مَوَاقِيتِ الصَّلَاةِ...");
+    const url = coords
+      ? `https://api.aladhan.com/v1/timings?latitude=${coords.lat}&longitude=${coords.lon}&method=3`
+      : `https://api.aladhan.com/v1/timingsByCity?city=${city.city}&country=${city.country}&method=3`;
+    fetch(url).then((r) => r.json()).then((d) => setTimings(d.data.timings)).catch(() => {}).finally(() => setLoading(""));
+  }, [city.city, city.country, coords]);
 
   // Azan alert
   useEffect(() => {
@@ -191,7 +210,7 @@ function Anees() {
   }, [timings, playQueue]);
 
   // Qibla
-  const qibla = qiblaBearing(city.lat, city.lon);
+  const qibla = coords ? qiblaBearing(coords.lat, coords.lon) : qiblaBearing(city.lat, city.lon);
   const openQibla = async () => {
     setView("qibla"); qiblaOkRef.current = false;
     const g = getClip("qiblaGuide"); if (g) playQueue([{ url: g, label: "أدر الهاتف ببطء" }]); else { stopAudio(); chime(1); }
@@ -224,20 +243,25 @@ function Anees() {
     if (has("تكرار", "كرر", "اعاده")) { toggleRepeat(); return; }
     if (has("توقف", "اسكت", "قف")) { stopAudio(); return; }
     if (has("الرئيسيه", "رجوع")) { stopAudio(); setView("home"); return; }
-    if (has("قبله")) { openQibla(); return; }
-    if (has("مواقيت", "صلاه")) { openPrayer(); return; }
-    if (has("صباح")) return openAthkar("morning");
+    // Surah by name anywhere in a natural sentence ("افتحلي سورة الملك", "ابي اسمع يس")
+    const strip = (x: string) => normalizeAr(x).replace(/^سوره\s*/, "").replace(/^ال/, "");
+    const words = t.split(/\s+/).map((w) => w.replace(/^(و|ف)?ال/, ""));
+    const named = surahs.find((x) => { const n = strip(x.name); return n.length >= 2 && (has("سوره") ? words.includes(n) || t.includes("سوره " + normalizeAr(x.name).replace(/^سوره\s*/, "")) : n.length >= 3 && words.includes(n)); });
+    if (named && !has("اذكار", "ذكر")) { openSurah(named.number); return; }
+    if (has("قبله", "كعبه", "اتجاه")) { openQibla(); return; }
+    if (has("مواقيت", "صلاه", "اذان", "وقت", "باقي", "متي", "فجر", "ظهر", "عصر", "مغرب", "عشاء")) { openPrayer(); return; }
+    if (has("صباح", "الصبح")) return openAthkar("morning");
     if (has("مساء")) return openAthkar("evening");
-    if (has("نوم")) return openAthkar("sleep");
+    if (has("نوم", "انام", "النوم")) return openAthkar("sleep");
     if (has("ورد", "اطراف")) return openAthkar("wird");
-    if (has("اذكار")) return openAthkar("morning");
-    if (has("محاضره", "درس", "راديو", "فتوى", "فتاوى")) return openRadio();
+    if (has("اذكار", "ذكر", "اذكر")) return openAthkar("morning");
+    if (has("محاضر", "درس", "دروس", "راديو", "فتوى", "فتاوي", "فتاوى", "موعظه", "مواعظ", "عثيمين", "شيخ")) return openRadio();
     if (has("سوره")) {
       const q = t.replace(/.*سوره\s*/, "").replace(/^ال/, "").trim();
       const s = surahs.find((x) => { const n = normalizeAr(x.name).replace(/^سوره\s*/, "").replace(/^ال/, ""); return q && (n.startsWith(q) || q.startsWith(n)); });
       openSurah(s ? s.number : 1); return;
     }
-    if (has("قران", "قرءان")) { openSurah(1); return; }
+    if (has("قران", "قرءان", "سوره", "مصحف", "تلاوه")) { openSurah(1); return; }
     chime(); setNotice("لم أفهم، حاول مرة أخرى"); listenLater(1200);
   };
 
@@ -256,6 +280,7 @@ function Anees() {
       </header>
 
       <MicButton listening={listening} playing={playing} onClick={() => (listening ? stopListening() : (stopAudio(), startListening()))} />
+      {loading && <Spinner label={loading} />}
       {(heard || notice || nowLabel) && (
         <div className="text-center text-2xl leading-relaxed">
           {heard && <p className="opacity-80">سَمِعْتُ: «{heard}»</p>}
@@ -332,17 +357,18 @@ function Anees() {
             <select value={cityId} onChange={(e) => setCityId(e.target.value)} className="mb-4 w-full rounded-2xl border-4 border-gold bg-card px-4 py-3 text-2xl">
               {CITIES.map((c) => <option key={c.id} value={c.id}>{c.ar}</option>)}
             </select>
+            <BigBtn onClick={() => { geoTried.current = false; locate(true); }}>📍 اسْتَخْدِمْ مَوْقِعِي الحَالِيَّ {coords ? "✅" : ""}</BigBtn>
             {np && (
-              <p className="mb-4 text-center text-3xl font-bold text-primary">
+              <p className="my-4 text-center text-3xl font-bold text-primary">
                 الصَّلَاةُ القَادِمَةُ: {PRAYER_AR[np.key]} بَعْدَ {np.h ? `${np.h} سَاعَة و` : ""}{np.m} دَقِيقَة
               </p>
             )}
             <div className="grid gap-2">
-              {timings ? PRAYERS.map((p) => (
-                <div key={p} className={`flex justify-between rounded-2xl p-4 text-3xl font-bold ${np?.key === p ? "bg-gold text-gold-foreground" : "bg-muted"}`}>
-                  <span>{PRAYER_AR[p]}</span><span dir="ltr">{timings[p]}</span>
-                </div>
-              )) : <p className="text-2xl">جَارٍ التَّحْمِيلُ...</p>}
+              {timings ? ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"].map((p) => (
+                <button key={p} onClick={() => (p === "Sunrise" ? chime(1) : playPrayerClip(p))} className={`flex min-h-20 justify-between rounded-2xl p-5 text-right text-3xl font-bold ${np?.key === p ? "bg-gold text-gold-foreground" : "bg-muted"}`}>
+                  <span>{p === "Sunrise" ? "الشُّرُوقُ" : PRAYER_AR[p]}</span><span>{fmt12(timings[p] ?? "")}</span>
+                </button>
+              )) : <Spinner label="جَارٍ تَحْمِيلُ المَوَاقِيتِ..." />}
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <BigBtn onClick={announcePrayer}>🔊 اسْتَمِعْ لِلْمَوْعِدِ</BigBtn>
@@ -373,7 +399,31 @@ function Anees() {
           <BigBtn onClick={() => { setAzanAlert(""); stopAudio(); }}>إِغْلَاقٌ</BigBtn>
         </div>
       )}
+      <footer className="mt-auto border-t-2 border-gold/40 pt-4 text-center text-base leading-relaxed opacity-80">
+        {view === "quran" && "المَصْدَرُ: نَصُّ المُصْحَفِ العُثْمَانِيِّ (Tanzil عبر AlQuran.cloud) — التِّلَاوَةُ: الشَّيْخُ أَحْمَدُ العَجَمِي (Islamic Network)"}
+        {view === "athkar" && "المَصْدَرُ: أَذْكَارُ حِصْنِ المُسْلِمِ بِصَوْتِ الشَّيْخِ مِشَارِي العَفَاسِي (أَرْشِيفُ الإِنْتَرْنِت Archive.org)"}
+        {view === "radio" && "المَصْدَرُ: فَتَاوَى نُورٌ عَلَى الدَّرْبِ — المَكْتَبَةُ الصَّوْتِيَّةُ لِلشَّيْخِ ابْنِ عُثَيْمِين (Archive.org)"}
+        {(view === "prayer" || view === "qibla") && "المَصْدَرُ: مَوَاقِيتُ AlAdhan.com — طَرِيقَةُ رَابِطَةِ العَالَمِ الإِسْلَامِيِّ — الأَذَانُ: IslamCan"}
+        {view === "home" && "القُرْآنُ: الشَّيْخُ العَجَمِي • الأَذْكَارُ: الشَّيْخُ العَفَاسِي • الدُّرُوسُ: الشَّيْخُ ابْنُ عُثَيْمِين • المَوَاقِيتُ: AlAdhan"}
+      </footer>
     </main>
+  );
+}
+
+function fmt12(hm: string) {
+  const [h, m] = hm.split(" ")[0]!.split(":").map(Number) as [number, number];
+  if (Number.isNaN(h)) return hm;
+  const suffix = h < 12 ? "ص" : "م";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function Spinner({ label }: { label: string }) {
+  return (
+    <div role="status" className="flex items-center justify-center gap-4 py-3 text-2xl font-bold">
+      <span className="h-10 w-10 animate-spin rounded-full border-4 border-gold border-t-transparent" />
+      <span className="animate-pulse">{label}</span>
+    </div>
   );
 }
 
@@ -395,8 +445,8 @@ function MicButton({ listening, playing, onClick }: { listening: boolean; playin
 
 function Card({ title, sub, icon, onClick }: { title: string; sub: string; icon: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-5 rounded-3xl border-4 border-gold bg-card p-6 text-right text-card-foreground shadow-xl active:scale-[0.98]">
-      <span className="text-6xl">{icon}</span>
+    <button onClick={onClick} className="flex min-h-36 w-full items-center gap-6 rounded-3xl border-4 border-gold bg-card p-7 text-right text-card-foreground shadow-xl active:scale-[0.98]">
+      <span className="text-7xl">{icon}</span>
       <span>
         <span className="block text-3xl font-bold">{title}</span>
         <span className="block text-2xl text-muted-foreground">{sub}</span>
@@ -407,7 +457,7 @@ function Card({ title, sub, icon, onClick }: { title: string; sub: string; icon:
 
 function BigBtn({ children, onClick, active }: { children: React.ReactNode; onClick: () => void; active?: boolean }) {
   return (
-    <button onClick={onClick} className={`rounded-2xl border-4 border-gold px-5 py-3 text-2xl font-bold ${active ? "bg-gold text-gold-foreground" : "bg-primary text-primary-foreground"}`}>
+    <button onClick={onClick} className={`min-h-16 rounded-2xl border-4 border-gold px-6 py-4 text-2xl font-bold ${active ? "bg-gold text-gold-foreground" : "bg-primary text-primary-foreground"}`}>
       {children}
     </button>
   );
