@@ -329,6 +329,14 @@ function Anees() {
         )}
       </header>
 
+      {view === "home" && (
+        <section aria-label="الساعة والتاريخ" className="rounded-3xl border-4 border-gold bg-secondary px-4 py-5 text-center shadow-xl">
+          <p className="text-6xl font-bold tracking-wide text-gold">{clock?.time ?? "…"}</p>
+          <p className="mt-2 text-3xl font-bold text-foreground">{clock?.hijri ?? " "}</p>
+          <p className="mt-1 text-2xl font-bold text-foreground/90">{clock?.greg ?? " "}</p>
+        </section>
+      )}
+
       <MicButton listening={listening} playing={playing} onClick={() => (listening ? stopListening() : (stopAudio(), startListening()))} />
       {loading && <Spinner label={loading} />}
       {(heard || notice || nowLabel) && (
