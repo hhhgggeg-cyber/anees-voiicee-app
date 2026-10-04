@@ -247,6 +247,7 @@ function Anees() {
   const qibla = coords ? qiblaBearing(coords.lat, coords.lon) : city ? qiblaBearing(city.lat, city.lon) : 0;
   const openQibla = async () => {
     setView("qibla"); qiblaOkRef.current = false;
+    if (!coords && !city) { locate(); setNotice("نَحْتَاجُ مَوْقِعَكَ لِتَحْدِيدِ القِبْلَةِ. اسْمَحْ بِالمَوْقِعِ أَوِ اخْتَرْ مَدِينَتَكَ مِنْ شَاشَةِ المَوَاقِيتِ."); chime(1); return; }
     const dirs = ["الشمال", "الشمال الشرقي", "الشرق", "الجنوب الشرقي", "الجنوب", "الجنوب الغربي", "الغرب", "الشمال الغربي"];
     const dir = dirs[Math.round(qibla / 45) % 8];
     const text = `القبلة باتجاه ${dir}، على زاوية ${Math.round(qibla)} درجة من الشمال. أدر الهاتف ببطء حتى تسمع التأكيد.`;
