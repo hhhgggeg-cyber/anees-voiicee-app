@@ -4,7 +4,6 @@ export type Track = { url: string; label: string };
 const AR = "https://archive.org/download";
 const AF = `${AR}/sheikh-mishary-rashid-alafasy-azkar/${encodeURIComponent("Sheikh Mishary Rashid Alafasy - ")}`;
 const SLEEP = `${AR}/Moath_a4_hotmail_20130507/%25D8%25A3%25D8%25B0%25D9%2583%25D8%25A7%25D8%25B1%20%25D8%25A7%25D9%2584%25D9%2586%25D9%2588%25D9%2585%20-%20%25D9%2585%25D8%25B4%25D8%25A7%25D8%25B1%25D9%258A%20%25D8%25A7%25D9%2584%25D9%2585%25D8%25B9%25D9%2581%25D8%25A7%25D8%25B3%25D9%258A.mp3`;
-const AZ = (f: string) => `${AR}/azkar-alafasy/${f}.mp3`;
 
 // Complete athkar recordings (supplications) by Sheikh Mishary Alafasy — no plain surahs.
 export const ATHKAR: Record<string, { title: string; tracks: Track[] }> = {
@@ -21,16 +20,8 @@ export const ATHKAR: Record<string, { title: string; tracks: Track[] }> = {
     tracks: [{ url: SLEEP, label: "أَذْكَارُ النَّوْمِ كَامِلَةً" }],
   },
   wird: {
-    title: "الوِرْدُ اليَوْمِيُّ",
-    tracks: [
-      { url: AF + encodeURIComponent("اذكار الصباح والمساء.mp3"), label: "أَذْكَارُ أَطْرَافِ النَّهَارِ" },
-      { url: AZ("azkar-baed-al-salah"), label: "الأَذْكَارُ بَعْدَ الصَّلَاةِ" },
-      { url: AZ("azkar-baed-al-salah-2"), label: "الأَذْكَارُ بَعْدَ الصَّلَاةِ (٢)" },
-      { url: AZ("sobhan-allah-mla-albr"), label: "سُبْحَانَ اللَّهِ مِلْءَ البَرِّ" },
-      { url: AZ("alhamdu-lellah-adad-ma-khalq"), label: "الحَمْدُ لِلَّهِ عَدَدَ مَا خَلَقَ" },
-      { url: AZ("allahu-akbaru-kabira"), label: "اللَّهُ أَكْبَرُ كَبِيرًا" },
-      { url: AZ("doaa-after-tashahud"), label: "دُعَاءٌ بَعْدَ التَّشَهُّدِ" },
-    ],
+    title: "أَذْكَارُ أَطْرَافِ النَّهَارِ وَالوِرْدُ اليَوْمِيُّ",
+    tracks: [{ url: AF + encodeURIComponent("اذكار الصباح والمساء.mp3"), label: "أَذْكَارُ أَطْرَافِ النَّهَارِ وَالوِرْدُ اليَوْمِيُّ" }],
   },
 };
 
@@ -79,19 +70,19 @@ export function qiblaBearing(lat: number, lon: number) {
   return (Math.atan2(y, x) / r + 360) % 360;
 }
 
-export function chime() {
+export function chime(count = 2) {
   try {
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
-    [880, 1320].forEach((f, i) => {
+    Array.from({ length: count }, (_, i) => (i % 2 ? 1320 : 880)).forEach((f, i) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
       o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.25);
-      g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + i * 0.25 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.25 + 0.6);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.45);
+      g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + i * 0.45 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.45 + 0.6);
       o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + i * 0.25);
-      o.stop(ctx.currentTime + i * 0.25 + 0.65);
+      o.start(ctx.currentTime + i * 0.45);
+      o.stop(ctx.currentTime + i * 0.45 + 0.65);
     });
   } catch { /* ignore */ }
 }
