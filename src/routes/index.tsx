@@ -59,6 +59,19 @@ function Anees() {
   const [heading, setHeading] = useState<number | null>(null);
   const qiblaOkRef = useRef(false);
   const [aligned, setAligned] = useState(false);
+  const diffRef = useRef(180);
+  useEffect(() => {
+    if (view !== "qibla") return;
+    let stop = false; let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      if (stop) return;
+      const d = diffRef.current;
+      if (d >= 8 && d < 90 && !playing) chime(1);
+      t = setTimeout(tick, d < 8 ? 600 : 300 + d * 15);
+    };
+    t = setTimeout(tick, 1500);
+    return () => { stop = true; clearTimeout(t); };
+  }, [view, playing]);
 
   // ---------- speech ----------
   const handleRef = useRef<(t: string) => void>(() => {});
@@ -85,15 +98,24 @@ function Anees() {
     a.src = t.url; a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
   }, []);
 
+  const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listenLater = useCallback((ms: number) => {
+    if (listenTimer.current) clearTimeout(listenTimer.current);
+    listenTimer.current = setTimeout(startListening, ms);
+  }, [startListening]);
+
   const playQueue = useCallback((tracks: Track[], start = 0) => {
     stopListening();
+    if (listenTimer.current) clearTimeout(listenTimer.current);
+    const a = audioRef.current; if (a) { a.pause(); a.removeAttribute("src"); a.load(); }
+    repeatRef.current = false; setRepeat(false);
     const valid = tracks.filter((t) => t.url);
     if (!valid.length) {
       chime(); setNotice("لم تُضَف تسجيلات صوتية لهذا القسم بعد");
-      setTimeout(startListening, 1500); return;
+      listenLater(1500); return;
     }
     setNotice(""); queueRef.current = valid; playAt(Math.min(start, valid.length - 1));
-  }, [playAt, startListening]);
+  }, [playAt, listenLater]);
 
   const stopAudio = () => { audioRef.current?.pause(); setPlaying(false); };
 
@@ -139,14 +161,16 @@ function Anees() {
     return null;
   }, [timings]);
 
+  const pendingAnnounce = useRef(false);
   const announcePrayer = useCallback(() => {
     const np = nextPrayer(); if (!np) return;
     const clip = getClip(np.key);
-    if (!clip) { chime(); setNotice("سَجِّلْ صَوْتَ الإِعْلَانِ مَرَّةً وَاحِدَةً مِنْ قِسْمِ «تَسْجِيلُ الأَصْوَاتِ»"); setTimeout(startListening, 1500); return; }
+    if (!clip) { const n = PRAYERS.indexOf(np.key) + 1; chime(n); setNotice(`${n} نَغَمَات = ${PRAYER_AR[np.key]} — سَجِّلِ الصَّوْتَ مِنْ «تَسْجِيلُ الأَصْوَاتِ»`); listenLater(n * 450 + 1500); return; }
     playQueue([{ url: clip, label: `الصلاة القادمة: ${PRAYER_AR[np.key]}` }]);
-  }, [nextPrayer, playQueue, startListening]);
+  }, [nextPrayer, playQueue, listenLater]);
 
-  const openPrayer = () => { setView("prayer"); if (timings) announcePrayer(); };
+  useEffect(() => { if (timings && pendingAnnounce.current) { pendingAnnounce.current = false; announcePrayer(); } }, [timings, announcePrayer]);
+  const openPrayer = () => { setView("prayer"); if (timings) announcePrayer(); else pendingAnnounce.current = true; };
 
   useEffect(() => {
     setTimings(null);
@@ -169,7 +193,8 @@ function Anees() {
   // Qibla
   const qibla = qiblaBearing(city.lat, city.lon);
   const openQibla = async () => {
-    setView("qibla"); stopAudio();
+    setView("qibla"); qiblaOkRef.current = false;
+    const g = getClip("qiblaGuide"); if (g) playQueue([{ url: g, label: "أدر الهاتف ببطء" }]); else { stopAudio(); chime(1); }
     const DOE = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
     if (DOE?.requestPermission) { try { await DOE.requestPermission(); } catch { /* */ } }
   };
@@ -189,6 +214,7 @@ function Anees() {
     const ok = diff < 8; setAligned(ok);
     if (ok && !qiblaOkRef.current) { qiblaOkRef.current = true; chime(); const q = getClip("qibla"); if (q) playQueue([{ url: q, label: "اتجاه القبلة صحيح" }]); }
     if (diff > 20) qiblaOkRef.current = false;
+    diffRef.current = diff;
   }, [heading, qibla, playQueue]);
 
   // ---------- command router ----------
@@ -212,7 +238,7 @@ function Anees() {
       openSurah(s ? s.number : 1); return;
     }
     if (has("قران", "قرءان")) { openSurah(1); return; }
-    chime(); setNotice("لم أفهم، حاول مرة أخرى"); setTimeout(startListening, 1200);
+    chime(); setNotice("لم أفهم، حاول مرة أخرى"); listenLater(1200);
   };
 
   const np = nextPrayer();
@@ -428,7 +454,7 @@ function ClipRecorder() {
                   ? <button onClick={stop} className="rounded-xl bg-live px-4 py-2 text-xl font-bold text-live-foreground">⏹ إِنْهَاءٌ</button>
                   : <button disabled={!!rec} onClick={() => start(c.key)} className="rounded-xl bg-primary px-4 py-2 text-xl font-bold text-primary-foreground">⏺ سَجِّلْ</button>}
                 {has && !active && <>
-                  <button onClick={() => new Audio(getClip(c.key)).play()} className="rounded-xl bg-gold px-4 py-2 text-xl font-bold text-gold-foreground">▶</button>
+                  <button onClick={() => { document.querySelectorAll("audio").forEach((x) => x.pause()); new Audio(getClip(c.key)).play(); }} className="rounded-xl bg-gold px-4 py-2 text-xl font-bold text-gold-foreground">▶</button>
                   <button onClick={() => { removeClip(c.key); force((n) => n + 1); }} className="rounded-xl border-2 border-gold px-3 py-2 text-xl">🗑</button>
                 </>}
               </span>
