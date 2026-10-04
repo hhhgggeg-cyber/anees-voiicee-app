@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ATHKAR, RADIO, AZAN_URL, PRAYER_CLIPS, QIBLA_OK_CLIP, PRAYER_AR, CITIES,
+  ATHKAR, RADIO, AZAN_URL, PRAYER_AR, CITIES,
   normalizeAr, qiblaBearing, chime, type Track,
 } from "@/lib/anees-config";
+import { CLIP_KEYS, getClip, saveClip, removeClip, recordClip } from "@/lib/voice-clips";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -140,16 +141,10 @@ function Anees() {
 
   const announcePrayer = useCallback(() => {
     const np = nextPrayer(); if (!np) return;
-    const c = PRAYER_CLIPS;
-    const seq: Track[] = [
-      { url: c.nextPrayer, label: "الصلاة القادمة" },
-      { url: c.names[np.key] ?? "", label: PRAYER_AR[np.key] ?? "" },
-      { url: c.after, label: "بعد" },
-      ...(np.h ? [{ url: c.numbers[np.h] ?? "", label: `${np.h}` }, { url: c.hour, label: "ساعة" }] : []),
-      { url: c.numbers[np.m] ?? "", label: `${np.m}` }, { url: c.minute, label: "دقيقة" },
-    ] as Track[];
-    playQueue(seq);
-  }, [nextPrayer, playQueue]);
+    const clip = getClip(np.key);
+    if (!clip) { chime(); setNotice("سَجِّلْ صَوْتَ الإِعْلَانِ مَرَّةً وَاحِدَةً مِنْ قِسْمِ «تَسْجِيلُ الأَصْوَاتِ»"); setTimeout(startListening, 1500); return; }
+    playQueue([{ url: clip, label: `الصلاة القادمة: ${PRAYER_AR[np.key]}` }]);
+  }, [nextPrayer, playQueue, startListening]);
 
   const openPrayer = () => { setView("prayer"); if (timings) announcePrayer(); };
 
@@ -167,7 +162,7 @@ function Anees() {
       const now = new Date(); const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const p = PRAYERS.find((k) => timings[k] === hm);
       if (p && last !== hm) { last = hm; setAzanAlert(PRAYER_AR[p] ?? ""); playQueue([{ url: AZAN_URL, label: `أذان ${PRAYER_AR[p]}` }]); }
-    }, 20000);
+    }, 1000);
     return () => clearInterval(t);
   }, [timings, playQueue]);
 
@@ -192,7 +187,7 @@ function Anees() {
     if (heading == null) return;
     const diff = Math.abs(((qibla - heading + 540) % 360) - 180);
     const ok = diff < 8; setAligned(ok);
-    if (ok && !qiblaOkRef.current) { qiblaOkRef.current = true; chime(); if (QIBLA_OK_CLIP) playQueue([{ url: QIBLA_OK_CLIP, label: "اتجاه القبلة صحيح" }]); }
+    if (ok && !qiblaOkRef.current) { qiblaOkRef.current = true; chime(); const q = getClip("qibla"); if (q) playQueue([{ url: q, label: "اتجاه القبلة صحيح" }]); }
     if (diff > 20) qiblaOkRef.current = false;
   }, [heading, qibla, playQueue]);
 
@@ -247,7 +242,7 @@ function Anees() {
         <div className="grid gap-5">
           <Card title="القُرْآنُ الكَرِيمُ" sub="الشَّيْخُ أَحْمَدُ العَجَمِي" icon="📖" onClick={() => openSurah(1)} />
           <Card title="الأَذْكَارُ" sub="الشَّيْخُ مِشَارِي العَفَاسِي" icon="📿" onClick={() => openAthkar("morning")} />
-          <Card title="المُحَاضَرَاتُ (رَادْيُو الفَتَاوَى)" sub="الشَّيْخُ ابْنُ عُثَيْمِين" icon="📻" onClick={openRadio} />
+          <Card title="المُحَاضَرَاتُ (رَادْيُو الدُّرُوسِ وَالمَوَاعِظِ)" sub="الشَّيْخُ ابْنُ عُثَيْمِين" icon="📻" onClick={openRadio} />
           <Card title="مَوَاقِيتُ الصَّلَاةِ وَالقِبْلَةِ" sub={city.ar} icon="🕌" onClick={openPrayer} />
         </div>
       )}
@@ -289,15 +284,15 @@ function Anees() {
 
       {view === "radio" && (
         <section className="rounded-3xl border-4 border-gold bg-card p-6 text-card-foreground">
-          <h2 className="text-3xl font-bold">📻 رَادْيُو الفَتَاوَى — نُورٌ عَلَى الدَّرْبِ</h2>
+          <h2 className="text-3xl font-bold">📻 رَادْيُو الدُّرُوسِ وَالمَوَاعِظِ — نُورٌ عَلَى الدَّرْبِ</h2>
           <p className="mb-4 text-xl text-muted-foreground">الشَّيْخُ مُحَمَّدُ بْنُ صَالِحٍ ابْنُ عُثَيْمِين</p>
           <div className="mb-4 flex gap-3">
             <BigBtn onClick={() => (playing ? stopAudio() : openRadio())}>{playing ? "⏸ إِيقَافٌ" : "▶ تَشْغِيلُ البَثِّ"}</BigBtn>
           </div>
           <div className="grid gap-3">
             {RADIO.map((r) => (
-              <button key={r.topic} onClick={() => playQueue(r.tracks)} className="rounded-2xl bg-muted p-4 text-right">
-                <p className="text-2xl font-bold">{r.topic}</p>
+              <button key={r.title} onClick={() => playQueue(r.tracks)} className="rounded-2xl bg-muted p-4 text-right">
+                <p className="text-2xl font-bold">{r.title}</p>
                 <p className="text-lg text-muted-foreground">{r.tracks[0]!.label}</p>
               </button>
             ))}
@@ -328,6 +323,7 @@ function Anees() {
               <BigBtn onClick={openQibla}>🧭 اتِّجَاهُ القِبْلَةِ</BigBtn>
             </div>
           </div>
+          <ClipRecorder />
         </section>
       )}
 
@@ -403,5 +399,42 @@ function List({ tracks, current, onPick, sub }: { tracks: Track[]; current: stri
         ))}
       </div>
     </div>
+  );
+}
+
+function ClipRecorder() {
+  const [, force] = useState(0);
+  const [rec, setRec] = useState<{ key: string; stop: () => Promise<string> } | null>(null);
+  const [err, setErr] = useState("");
+  const start = async (key: string) => {
+    try { setErr(""); const r = await recordClip(); setRec({ key, stop: r.stop }); }
+    catch { setErr("لَمْ يُسْمَحْ بِاسْتِخْدَامِ المِيكْرُوفُونِ"); }
+  };
+  const stop = async () => { if (!rec) return; const url = await rec.stop(); saveClip(rec.key, url); setRec(null); force((n) => n + 1); };
+  return (
+    <details className="rounded-3xl border-4 border-gold bg-card p-5 text-card-foreground">
+      <summary className="cursor-pointer text-2xl font-bold">🎤 تَسْجِيلُ الأَصْوَاتِ (لِأَحَدِ أَفْرَادِ العَائِلَةِ)</summary>
+      <p className="my-3 text-lg text-muted-foreground">سَجِّلْ كُلَّ جُمْلَةٍ بِصَوْتِكَ مَرَّةً وَاحِدَةً، فَيَسْمَعُهَا أَنِيسُ عِنْدَ السُّؤَالِ عَنِ الصَّلَاةِ أَوْ عِنْدَ ضَبْطِ القِبْلَةِ.</p>
+      {err && <p className="mb-2 text-xl font-bold text-destructive">{err}</p>}
+      <div className="grid gap-2">
+        {CLIP_KEYS.map((c) => {
+          const has = !!getClip(c.key); const active = rec?.key === c.key;
+          return (
+            <div key={c.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted p-3">
+              <span className="text-xl font-bold">«{c.say}» {has ? "✅" : ""}</span>
+              <span className="flex gap-2">
+                {active
+                  ? <button onClick={stop} className="rounded-xl bg-live px-4 py-2 text-xl font-bold text-live-foreground">⏹ إِنْهَاءٌ</button>
+                  : <button disabled={!!rec} onClick={() => start(c.key)} className="rounded-xl bg-primary px-4 py-2 text-xl font-bold text-primary-foreground">⏺ سَجِّلْ</button>}
+                {has && !active && <>
+                  <button onClick={() => new Audio(getClip(c.key)).play()} className="rounded-xl bg-gold px-4 py-2 text-xl font-bold text-gold-foreground">▶</button>
+                  <button onClick={() => { removeClip(c.key); force((n) => n + 1); }} className="rounded-xl border-2 border-gold px-3 py-2 text-xl">🗑</button>
+                </>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
