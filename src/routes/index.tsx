@@ -179,12 +179,28 @@ function Anees() {
     if (clip) playQueue([{ url: clip, label: PRAYER_AR[key] ?? "" }]); else chime(PRAYERS.indexOf(key) + 1);
   };
   const pendingAnnounce = useRef(false);
+  const speak = useCallback(async (text: string, label: string) => {
+    stopListening(); audioRef.current?.pause();
+    startLoading("جَارٍ تَجْهِيزُ الرَّدِّ الصَّوْتِيِّ...");
+    try {
+      const r = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      if (!r.ok) throw new Error(await r.text());
+      const url = URL.createObjectURL(await r.blob());
+      setLoading(""); playQueue([{ url, label }]);
+    } catch {
+      setLoading(""); chime(1); setNotice(label); listenLater(1500);
+    }
+  }, [playQueue, listenLater]);
+
   const announcePrayer = useCallback(() => {
     const np = nextPrayer(); if (!np) return;
-    const clip = getClip(np.key);
-    if (!clip) { const n = PRAYERS.indexOf(np.key) + 1; chime(n); setNotice(`${n} نَغَمَات = ${PRAYER_AR[np.key]} — سَجِّلِ الصَّوْتَ مِنْ «تَسْجِيلُ الأَصْوَاتِ»`); listenLater(n * 450 + 1500); return; }
-    playQueue([{ url: clip, label: `الصلاة القادمة: ${PRAYER_AR[np.key]}` }]);
-  }, [nextPrayer, playQueue, listenLater]);
+    const name = PRAYER_AR[np.key] ?? "";
+    const hrs = np.h === 0 ? "" : np.h === 1 ? "ساعة" : np.h === 2 ? "ساعتان" : np.h <= 10 ? `${np.h} ساعات` : `${np.h} ساعة`;
+    const mins = np.m === 0 ? "" : np.m === 1 ? "دقيقة واحدة" : np.m === 2 ? "دقيقتان" : np.m <= 10 ? `${np.m} دقائق` : `${np.m} دقيقة`;
+    const rest = [hrs, mins].filter(Boolean).join(" و") || "أقل من دقيقة";
+    const text = `الصلاة القادمة هي صلاة ${name.replace(/^ال/, "")}، الباقي ${rest}.`;
+    speak(text, text);
+  }, [nextPrayer, speak]);
 
   useEffect(() => { if (timings && pendingAnnounce.current) { pendingAnnounce.current = false; announcePrayer(); } }, [timings, announcePrayer]);
   const openPrayer = () => { setView("prayer"); locate(); if (timings) announcePrayer(); else pendingAnnounce.current = true; };
@@ -213,7 +229,10 @@ function Anees() {
   const qibla = coords ? qiblaBearing(coords.lat, coords.lon) : qiblaBearing(city.lat, city.lon);
   const openQibla = async () => {
     setView("qibla"); qiblaOkRef.current = false;
-    const g = getClip("qiblaGuide"); if (g) playQueue([{ url: g, label: "أدر الهاتف ببطء" }]); else { stopAudio(); chime(1); }
+    const dirs = ["الشمال", "الشمال الشرقي", "الشرق", "الجنوب الشرقي", "الجنوب", "الجنوب الغربي", "الغرب", "الشمال الغربي"];
+    const dir = dirs[Math.round(qibla / 45) % 8];
+    const text = `القبلة باتجاه ${dir}، على زاوية ${Math.round(qibla)} درجة من الشمال. أدر الهاتف ببطء حتى تسمع التأكيد.`;
+    speak(text, `القبلة باتجاه ${dir}`);
     const DOE = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
     if (DOE?.requestPermission) { try { await DOE.requestPermission(); } catch { /* */ } }
   };
