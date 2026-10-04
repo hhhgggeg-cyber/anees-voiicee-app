@@ -1,72 +1,48 @@
 // All spoken audio is pre-recorded MP3. Empty URLs are skipped (a soft chime plays instead).
-const alafasyAyah = (n: number) => `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${n}.mp3`;
-const alafasySurah = (n: number) => `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${n}.mp3`;
-
 export type Track = { url: string; label: string };
 
+const AR = "https://archive.org/download";
+const AF = `${AR}/sheikh-mishary-rashid-alafasy-azkar/${encodeURIComponent("Sheikh Mishary Rashid Alafasy - ")}`;
+const SLEEP = `${AR}/Moath_a4_hotmail_20130507/%25D8%25A3%25D8%25B0%25D9%2583%25D8%25A7%25D8%25B1%20%25D8%25A7%25D9%2584%25D9%2586%25D9%2588%25D9%2585%20-%20%25D9%2585%25D8%25B4%25D8%25A7%25D8%25B1%25D9%258A%20%25D8%25A7%25D9%2584%25D9%2585%25D8%25B9%25D9%2581%25D8%25A7%25D8%25B3%25D9%258A.mp3`;
+const AZ = (f: string) => `${AR}/azkar-alafasy/${f}.mp3`;
+
+// Complete athkar recordings (supplications) by Sheikh Mishary Alafasy — no plain surahs.
 export const ATHKAR: Record<string, { title: string; tracks: Track[] }> = {
   morning: {
     title: "أَذْكَارُ الصَّبَاحِ",
-    tracks: [
-      { url: alafasyAyah(262), label: "آيَةُ الكُرْسِيِّ" },
-      { url: alafasySurah(112), label: "سُورَةُ الإِخْلَاصِ" },
-      { url: alafasySurah(113), label: "سُورَةُ الفَلَقِ" },
-      { url: alafasySurah(114), label: "سُورَةُ النَّاسِ" },
-    ],
+    tracks: [{ url: AF + encodeURIComponent("أذكار الصباح.mp3"), label: "أَذْكَارُ الصَّبَاحِ كَامِلَةً" }],
   },
   evening: {
     title: "أَذْكَارُ المَسَاءِ",
-    tracks: [
-      { url: alafasyAyah(262), label: "آيَةُ الكُرْسِيِّ" },
-      { url: alafasyAyah(292), label: "آمَنَ الرَّسُولُ" },
-      { url: alafasyAyah(293), label: "لَا يُكَلِّفُ اللَّهُ نَفْسًا" },
-      { url: alafasySurah(112), label: "سُورَةُ الإِخْلَاصِ" },
-      { url: alafasySurah(113), label: "سُورَةُ الفَلَقِ" },
-      { url: alafasySurah(114), label: "سُورَةُ النَّاسِ" },
-    ],
+    tracks: [{ url: AF + encodeURIComponent("أذكار المساء.mp3"), label: "أَذْكَارُ المَسَاءِ كَامِلَةً" }],
   },
   sleep: {
     title: "أَذْكَارُ النَّوْمِ",
-    tracks: [
-      { url: alafasyAyah(262), label: "آيَةُ الكُرْسِيِّ" },
-      { url: alafasyAyah(292), label: "خَوَاتِيمُ البَقَرَةِ" },
-      { url: alafasyAyah(293), label: "خَوَاتِيمُ البَقَرَةِ" },
-      { url: alafasySurah(67), label: "سُورَةُ المُلْكِ" },
-      { url: alafasySurah(112), label: "سُورَةُ الإِخْلَاصِ" },
-      { url: alafasySurah(113), label: "سُورَةُ الفَلَقِ" },
-      { url: alafasySurah(114), label: "سُورَةُ النَّاسِ" },
-    ],
+    tracks: [{ url: SLEEP, label: "أَذْكَارُ النَّوْمِ كَامِلَةً" }],
   },
   wird: {
     title: "الوِرْدُ اليَوْمِيُّ",
     tracks: [
-      { url: alafasySurah(1), label: "سُورَةُ الفَاتِحَةِ" },
-      { url: alafasySurah(36), label: "سُورَةُ يس" },
-      { url: alafasySurah(56), label: "سُورَةُ الوَاقِعَةِ" },
+      { url: AF + encodeURIComponent("اذكار الصباح والمساء.mp3"), label: "أَذْكَارُ أَطْرَافِ النَّهَارِ" },
+      { url: AZ("azkar-baed-al-salah"), label: "الأَذْكَارُ بَعْدَ الصَّلَاةِ" },
+      { url: AZ("azkar-baed-al-salah-2"), label: "الأَذْكَارُ بَعْدَ الصَّلَاةِ (٢)" },
+      { url: AZ("sobhan-allah-mla-albr"), label: "سُبْحَانَ اللَّهِ مِلْءَ البَرِّ" },
+      { url: AZ("alhamdu-lellah-adad-ma-khalq"), label: "الحَمْدُ لِلَّهِ عَدَدَ مَا خَلَقَ" },
+      { url: AZ("allahu-akbaru-kabira"), label: "اللَّهُ أَكْبَرُ كَبِيرًا" },
+      { url: AZ("doaa-after-tashahud"), label: "دُعَاءٌ بَعْدَ التَّشَهُّدِ" },
     ],
   },
 };
 
-// Sheikh Ibn Uthaymeen — paste direct MP3 links here.
-export const RADIO: { topic: string; tracks: Track[] }[] = [
-  { topic: "أَحْكَامُ الصَّلَاةِ وَطَهَارَتُهَا", tracks: [{ url: "", label: "نُورٌ عَلَى الدَّرْبِ — سُؤَالٌ فِي الطَّهَارَةِ" }] },
-  { topic: "أَحْكَامُ الصَّوْمِ وَالزَّكَاةِ", tracks: [{ url: "", label: "نُورٌ عَلَى الدَّرْبِ — سُؤَالٌ فِي الصِّيَامِ" }] },
-  { topic: "أَحْكَامُ الحَجِّ وَالعُمْرَةِ", tracks: [{ url: "", label: "نُورٌ عَلَى الدَّرْبِ — سُؤَالٌ فِي المَنَاسِكِ" }] },
-  { topic: "فَضْلُ ذِكْرِ اللَّهِ وَالعَمَلِ الصَّالِحِ", tracks: [{ url: "", label: "نُورٌ عَلَى الدَّرْبِ — فَضْلُ الذِّكْرِ" }] },
-];
+// Sheikh Ibn Uthaymeen — "نور على الدرب" Q&A episodes (archive.org).
+const NOOR = (n: number, part: "a" | "b") => `${AR}/253b_20210725/${String(n).padStart(3, "0")}${part}.mp3`;
+const AR_NUM = (n: number) => n.toLocaleString("ar-EG");
+export const RADIO: { title: string; tracks: Track[] }[] = Array.from({ length: 20 }, (_, i) => ({
+  title: `الحَلْقَةُ ${AR_NUM(i + 1)}`,
+  tracks: (["a", "b"] as const).map((p, j) => ({ url: NOOR(i + 1, p), label: `نُورٌ عَلَى الدَّرْبِ — الحَلْقَةُ ${AR_NUM(i + 1)} (${j ? "الجُزْءُ الثَّانِي" : "الجُزْءُ الأَوَّلُ"})` })),
+}));
 
 export const AZAN_URL = "https://www.islamcan.com/audio/adhan/azan1.mp3";
-
-// Pre-recorded voice clips for the prayer-time announcement. Paste MP3 links.
-export const PRAYER_CLIPS = {
-  nextPrayer: "", // "الصَّلَاةُ القَادِمَةُ"
-  after: "", // "بَعْدَ"
-  hour: "", // "سَاعَة"
-  minute: "", // "دَقِيقَة"
-  names: { Fajr: "", Dhuhr: "", Asr: "", Maghrib: "", Isha: "" } as Record<string, string>,
-  numbers: {} as Record<number, string>, // 0..59 → mp3
-};
-export const QIBLA_OK_CLIP = ""; // "اتِّجَاهُ القِبْلَةِ صَحِيحٌ"
 
 export const PRAYER_AR: Record<string, string> = {
   Fajr: "الفَجْرُ", Dhuhr: "الظُّهْرُ", Asr: "العَصْرُ", Maghrib: "المَغْرِبُ", Isha: "العِشَاءُ",
