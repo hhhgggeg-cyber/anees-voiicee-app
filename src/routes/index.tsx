@@ -25,6 +25,16 @@ type Ayah = { text: string; audio: string; numberInSurah: number };
 type SurahMeta = { number: number; name: string };
 const PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
+// Clock & date formatters (device's own timezone)
+const fmtTime = new Intl.DateTimeFormat("ar", { hour: "numeric", minute: "2-digit", hour12: true });
+const fmtHijri = new Intl.DateTimeFormat("ar-SA-u-ca-islamic-umalqura", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const fmtGreg = new Intl.DateTimeFormat("ar-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const clockStrings = (d: Date) => ({
+  time: fmtTime.format(d),
+  hijri: fmtHijri.format(d),
+  greg: fmtGreg.format(d),
+});
+
 type SR = {
   lang: string; continuous: boolean; interimResults: boolean;
   start: () => void; stop: () => void; abort: () => void;
@@ -304,6 +314,8 @@ function Anees() {
   };
 
   const np = nextPrayer();
+  const hydrated = useHydrated();
+  const clock = hydrated ? clockStrings(new Date()) : null;
 
   // ---------- UI ----------
   return (
@@ -316,6 +328,14 @@ function Anees() {
           </button>
         )}
       </header>
+
+      {view === "home" && (
+        <section aria-label="الساعة والتاريخ" className="rounded-3xl border-4 border-gold bg-secondary px-4 py-5 text-center shadow-xl">
+          <p className="text-6xl font-bold tracking-wide text-gold">{clock?.time ?? "…"}</p>
+          <p className="mt-2 text-3xl font-bold text-foreground">{clock?.hijri ?? " "}</p>
+          <p className="mt-1 text-2xl font-bold text-foreground/90">{clock?.greg ?? " "}</p>
+        </section>
+      )}
 
       <MicButton listening={listening} playing={playing} onClick={() => (listening ? stopListening() : (stopAudio(), startListening()))} />
       {loading && <Spinner label={loading} />}
