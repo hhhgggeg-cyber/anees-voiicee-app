@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ATHKAR, RADIO, AZAN_URL, PRAYER_AR, CITIES,
@@ -404,6 +404,7 @@ function List({ tracks, current, onPick, sub }: { tracks: Track[]; current: stri
 
 function ClipRecorder() {
   const [, force] = useState(0);
+  const hydrated = useHydrated();
   const [rec, setRec] = useState<{ key: string; stop: () => Promise<string> } | null>(null);
   const [err, setErr] = useState("");
   const start = async (key: string) => {
@@ -418,7 +419,7 @@ function ClipRecorder() {
       {err && <p className="mb-2 text-xl font-bold text-destructive">{err}</p>}
       <div className="grid gap-2">
         {CLIP_KEYS.map((c) => {
-          const has = !!getClip(c.key); const active = rec?.key === c.key;
+          const has = hydrated && !!getClip(c.key); const active = rec?.key === c.key;
           return (
             <div key={c.key} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted p-3">
               <span className="text-xl font-bold">«{c.say}» {has ? "✅" : ""}</span>
