@@ -114,7 +114,10 @@ function Anees() {
     const a = audioRef.current; const t = queueRef.current[i];
     if (!a || !t) return;
     idxRef.current = i; setIdx(i); setNowLabel(t.label);
-    a.src = t.url; a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    a.src = t.url;
+    const saved = t.url.includes("253b_") ? Number(localStorage.getItem("anees-pos-" + t.url) || 0) : 0;
+    if (saved > 5) a.addEventListener("loadedmetadata", () => { try { a.currentTime = saved; } catch { /* */ } }, { once: true });
+    a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
   }, []);
 
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,10 +144,19 @@ function Anees() {
   useEffect(() => {
     const a = new Audio(); audioRef.current = a;
     a.onended = () => {
+      const eu = queueRef.current[idxRef.current]?.url; if (eu?.includes("253b_")) localStorage.removeItem("anees-pos-" + eu);
       if (repeatRef.current) { a.currentTime = 0; a.play(); return; }
       const n = idxRef.current + 1;
       if (n < queueRef.current.length) playAt(n);
       else { setPlaying(false); startListening(); }
+    };
+    let lastSave = 0;
+    a.ontimeupdate = () => {
+      const u = a.currentSrc || a.src;
+      if (!u.includes("253b_") || Date.now() - lastSave < 3000) return;
+      lastSave = Date.now();
+      const key = "anees-pos-" + (queueRef.current[idxRef.current]?.url ?? u);
+      if (a.duration && a.currentTime > a.duration - 10) localStorage.removeItem(key); else localStorage.setItem(key, String(Math.floor(a.currentTime)));
     };
     a.onpause = () => setPlaying(false);
     a.onplay = () => setPlaying(true);
@@ -165,7 +177,12 @@ function Anees() {
   }, [playQueue]);
 
   const openAthkar = (k: string) => { setView("athkar"); setAthkarKey(k); playQueue(ATHKAR[k]!.tracks); };
-  const openRadio = () => { setView("radio"); playQueue(RADIO.flatMap((r) => r.tracks)); };
+  const [lesson, setLesson] = useState(0);
+  const playLesson = (i: number) => {
+    const n = ((i % RADIO.length) + RADIO.length) % RADIO.length;
+    setView("radio"); setLesson(n); vibrate(); playQueue(RADIO[n]!.tracks);
+  };
+  const openRadio = () => playLesson(lesson);
 
   const nextPrayer = useCallback(() => {
     if (!timings) return null;
@@ -296,6 +313,14 @@ function Anees() {
     const words = t.split(/\s+/).map((w) => w.replace(/^(و|ف)?ال/, ""));
     const named = surahs.find((x) => { const n = strip(x.name); return n.length >= 2 && (has("سوره") ? words.includes(n) || t.includes("سوره " + normalizeAr(x.name).replace(/^سوره\s*/, "")) : n.length >= 3 && words.includes(n)); });
     if (named && !has("اذكار", "ذكر")) { openSurah(named.number); return; }
+    if (has("درس", "حلقه", "محاضره") || view === "radio") {
+      if (has("تالي", "بعده", "التاليه", "اللي بعد")) return playLesson(lesson + 1);
+      if (has("سابق", "قبله", "اللي قبل", "السابقه")) return playLesson(lesson - 1);
+      if (has("اخر", "غيره", "ثاني غير")) { let r = lesson; while (RADIO.length > 1 && r === lesson) r = Math.floor(Math.random() * RADIO.length); return playLesson(r); }
+      const num = lessonNumber(t);
+      if (num && num <= RADIO.length) return playLesson(num - 1);
+      if (num) { chime(); setNotice(`الدروس المتاحة من ١ إلى ${RADIO.length.toLocaleString("ar-EG")}`); listenLater(1500); return; }
+    }
     if (has("قبله", "كعبه", "اتجاه")) { openQibla(); return; }
     if (has("مواقيت", "صلاه", "اذان", "وقت", "باقي", "متي", "فجر", "ظهر", "عصر", "مغرب", "عشاء")) { openPrayer(); return; }
     if (has("صباح", "الصبح")) return openAthkar("morning");
@@ -303,7 +328,7 @@ function Anees() {
     if (has("نوم", "انام", "النوم")) return openAthkar("sleep");
     if (has("ورد", "اطراف")) return openAthkar("wird");
     if (has("اذكار", "ذكر", "اذكر")) return openAthkar("morning");
-    if (has("محاضر", "درس", "دروس", "راديو", "فتوى", "فتاوي", "فتاوى", "موعظه", "مواعظ", "عثيمين", "شيخ")) return openRadio();
+    if (has("محاضر", "درس", "دروس", "حلقه", "راديو", "فتوى", "فتاوي", "فتاوى", "موعظه", "مواعظ", "عثيمين", "شيخ")) return openRadio();
     if (has("سوره")) {
       const q = t.replace(/.*سوره\s*/, "").replace(/^ال/, "").trim();
       const s = surahs.find((x) => { const n = normalizeAr(x.name).replace(/^سوره\s*/, "").replace(/^ال/, ""); return q && (n.startsWith(q) || q.startsWith(n)); });
@@ -396,11 +421,17 @@ function Anees() {
           <h2 className="text-3xl font-bold">📻 رَادْيُو الدُّرُوسِ وَالمَوَاعِظِ — نُورٌ عَلَى الدَّرْبِ</h2>
           <p className="mb-4 text-xl text-muted-foreground">الشَّيْخُ مُحَمَّدُ بْنُ صَالِحٍ ابْنُ عُثَيْمِين</p>
           <div className="mb-4 flex gap-3">
-            <BigBtn onClick={() => (playing ? stopAudio() : openRadio())}>{playing ? "⏸ إِيقَافٌ" : "▶ تَشْغِيلُ البَثِّ"}</BigBtn>
+            <BigBtn onClick={() => (playing ? stopAudio() : openRadio())}>{playing ? "⏸ إِيقَافٌ" : "▶ تَشْغِيلُ الدَّرْسِ"}</BigBtn>
           </div>
+          <p className="mb-3 text-center text-3xl font-bold">{RADIO[lesson]!.title}</p>
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <button onClick={() => playLesson(lesson - 1)} className="min-h-20 rounded-2xl border-4 border-gold bg-primary text-3xl font-bold text-primary-foreground">السَّابِقُ ▶</button>
+            <button onClick={() => playLesson(lesson + 1)} className="min-h-20 rounded-2xl border-4 border-gold bg-primary text-3xl font-bold text-primary-foreground">التَّالِي ◀</button>
+          </div>
+          <p className="mb-4 text-center text-lg text-muted-foreground">قُلْ: «الدَّرْسُ التَّالِي» أَوْ «الدَّرْسُ السَّابِقُ» أَوْ «الحَلْقَةُ ٧» — وَيُكْمِلُ مِنْ حَيْثُ تَوَقَّفْتَ</p>
           <div className="grid gap-3">
             {RADIO.map((r) => (
-              <button key={r.title} onClick={() => playQueue(r.tracks)} className="rounded-2xl bg-muted p-4 text-right">
+              <button key={r.title} onClick={() => playLesson(RADIO.indexOf(r))} className={`rounded-2xl p-4 text-right ${RADIO.indexOf(r) === lesson ? "border-4 border-gold bg-muted" : "bg-muted"}`}>
                 <p className="text-2xl font-bold">{r.title}</p>
                 <p className="text-lg text-muted-foreground">{r.tracks[0]!.label}</p>
               </button>
@@ -472,6 +503,23 @@ function Anees() {
       </footer>
     </main>
   );
+}
+
+const NUM_WORDS: [string[], number][] = [
+  [["عشرين", "عشرون"], 20],
+  [["تاسع عشر", "تسعه عشر", "تسعة عشر"], 19], [["ثامن عشر", "ثمانيه عشر"], 18], [["سابع عشر", "سبعه عشر"], 17],
+  [["سادس عشر", "سته عشر", "ستة عشر"], 16], [["خامس عشر", "خمسه عشر"], 15], [["رابع عشر", "اربعه عشر"], 14],
+  [["ثالث عشر", "ثلاثه عشر", "ثلاث عشر"], 13], [["ثاني عشر", "اثني عشر", "اثنا عشر", "اطنعش"], 12], [["حادي عشر", "احد عشر", "احدعش"], 11],
+  [["عاشر", "عشره", "عشر"], 10], [["تاسع", "تسعه", "تسع"], 9], [["ثامن", "ثمانيه", "ثمان"], 8], [["سابع", "سبعه", "سبع"], 7],
+  [["سادس", "سته", "ست"], 6], [["خامس", "خمسه", "خمس"], 5], [["رابع", "اربعه", "اربع"], 4], [["ثالث", "ثلاثه", "ثلاث"], 3],
+  [["ثاني", "اثنين", "اثنان"], 2], [["اول", "واحد"], 1],
+];
+function lessonNumber(t: string): number | null {
+  const d = t.replace(/[٠-٩]/g, (c) => String("٠١٢٣٤٥٦٧٨٩".indexOf(c))).match(/\d+/);
+  if (d) return Number(d[0]) || null;
+  const words = t.split(/\s+/).map((w) => w.replace(/^(و|ف)?ال/, "")).join(" ");
+  for (const [forms, n] of NUM_WORDS) if (forms.some((f) => new RegExp(`(^|\\s)${f}(\\s|$)`).test(words))) return n;
+  return null;
 }
 
 function fmt12(hm: string) {
