@@ -180,7 +180,7 @@ function Anees() {
   const [lesson, setLesson] = useState(0);
   const playLesson = (i: number) => {
     const n = ((i % RADIO.length) + RADIO.length) % RADIO.length;
-    setView("radio"); setLesson(n); vibrate(); playQueue(RADIO[n]!.tracks);
+    setView("radio"); setLesson(n); playQueue(RADIO[n]!.tracks);
   };
   const openRadio = () => playLesson(lesson);
 
@@ -315,7 +315,7 @@ function Anees() {
     if (named && !has("اذكار", "ذكر")) { openSurah(named.number); return; }
     if (has("درس", "حلقه", "محاضره") || view === "radio") {
       if (has("تالي", "بعده", "التاليه", "اللي بعد")) return playLesson(lesson + 1);
-      if (has("سابق", "قبله", "اللي قبل", "السابقه")) return playLesson(lesson - 1);
+      if (has("سابق", "اللي قبل", "السابقه")) return playLesson(lesson - 1);
       if (has("اخر", "غيره", "ثاني غير")) { let r = lesson; while (RADIO.length > 1 && r === lesson) r = Math.floor(Math.random() * RADIO.length); return playLesson(r); }
       const num = lessonNumber(t);
       if (num && num <= RADIO.length) return playLesson(num - 1);
