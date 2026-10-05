@@ -243,18 +243,34 @@ function Anees() {
     startLoading("أَنِيس يُفَكِّرُ فِي رَدٍّ طَيِّبٍ...");
     try {
       const r = await fetch("/api/companion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: msgs }) });
-      const d = await r.json() as { reply?: string; error?: string };
+      const d = await r.json() as { reply?: string; error?: string; action?: string };
       if (!d.reply) throw new Error(d.error ?? "");
       chatRef.current = [...msgs, { role: "assistant", content: d.reply }]; setChat(chatRef.current);
-      setLoading(""); speak(d.reply, d.reply);
+      setLoading("");
+      const act = d.action ?? "none";
+      if (act === "none") { speak(d.reply, d.reply); return; }
+      // Short spoken welcome, then the approved recording by the sheikh (never AI voice for dua/athkar/Quran).
+      let recorded: Track[] = act === "fatiha" ? [] : ATHKAR[act]?.tracks ?? [];
+      if (act === "fatiha") {
+        try {
+          const q = await fetch("https://api.alquran.cloud/v1/surah/1/ar.ahmedajamy").then((x) => x.json());
+          recorded = (q.data.ayahs as { audio: string; numberInSurah: number }[]).map((a) => ({ url: a.audio, label: `سورة الفاتحة — آية ${a.numberInSurah} (الشيخ أحمد العجمي)` }));
+        } catch { /* fall through */ }
+      }
+      let intro: Track[] = [];
+      try {
+        const t = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: d.reply }) });
+        if (t.ok) intro = [{ url: URL.createObjectURL(await t.blob()), label: d.reply }];
+      } catch { /* skip intro */ }
+      playQueue([...intro, ...recorded]);
     } catch (e) {
       setLoading(""); chime(1); setNotice((e as Error).message || "تعذّر الرد الآن، حاول مرة أخرى"); listenLater(1500);
     }
-  }, [speak, listenLater]);
+  }, [speak, listenLater, playQueue]);
   const openCompanion = () => {
     setView("companion");
     if (!chatRef.current.length) {
-      const hi = "أهلاً وسهلاً يا حاج، أنا أنيس رفيقك. كيف حالك اليوم؟ تكلّم معي بما في خاطرك.";
+      const hi = "أهلاً وسهلاً، أنا أنيس رفيقك. كيف حالك اليوم؟ تكلّم معي بما في خاطرك.";
       chatRef.current = [{ role: "assistant", content: hi }]; setChat(chatRef.current); speak(hi, hi);
     } else startListening();
   };
@@ -460,8 +476,8 @@ function Anees() {
             ))}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <BigBtn onClick={() => askCompanion("أنا تعبان ومريض، ادع لي بدعاء الشفاء")}>🤍 دُعَاءُ الشِّفَاءِ</BigBtn>
-            <BigBtn onClick={() => askCompanion("أنا متضايق ومهموم، ماذا أقول؟")}>🌿 دُعَاءُ الضِّيقِ</BigBtn>
+            <BigBtn onClick={() => askCompanion("أنا تعبان ومريض، شغل لي ما يناسب طلب الشفاء")}>🤍 لِلشِّفَاءِ</BigBtn>
+            <BigBtn onClick={() => askCompanion("أنا متضايق ومهموم، شغل لي ما يريحني")}>🌿 عِنْدَ الضِّيقِ</BigBtn>
           </div>
           <p className="mt-4 text-center text-lg text-muted-foreground">أَنِيس رَفِيقٌ إِيمَانِيٌّ وَلَا يُفْتِي — لِلْفَتْوَى يُرْجَى سُؤَالُ أَهْلِ العِلْمِ</p>
         </section>
@@ -548,7 +564,7 @@ function Anees() {
       <footer className="mt-auto border-t-2 border-gold/40 pt-4 text-center text-base leading-relaxed opacity-80">
         {view === "quran" && "المَصْدَرُ: نَصُّ المُصْحَفِ العُثْمَانِيِّ (Tanzil عبر AlQuran.cloud) — التِّلَاوَةُ: الشَّيْخُ أَحْمَدُ العَجَمِي (Islamic Network)"}
         {view === "athkar" && "المَصْدَرُ: أَذْكَارُ حِصْنِ المُسْلِمِ بِصَوْتِ الشَّيْخِ مِشَارِي العَفَاسِي (أَرْشِيفُ الإِنْتَرْنِت Archive.org)"}
-        {view === "companion" && "مَعَانِي الكَلِمَاتِ: التَّفْسِيرُ المُيَسَّرُ — مُجَمَّعُ المَلِكِ فَهْدٍ • الأَدْعِيَةُ مِنَ المَأْثُورِ"}
+        {view === "companion" && "مَعَانِي الكَلِمَاتِ: التَّفْسِيرُ المُيَسَّرُ — مُجَمَّعُ المَلِكِ فَهْدٍ • الأَذْكَارُ بِصَوْتِ الشَّيْخِ مِشَارِي العَفَاسِي وَالقُرْآنُ بِصَوْتِ الشَّيْخِ أَحْمَدَ العَجَمِي"}
         {view === "radio" && "المَصْدَرُ: فَتَاوَى نُورٌ عَلَى الدَّرْبِ — المَكْتَبَةُ الصَّوْتِيَّةُ لِلشَّيْخِ ابْنِ عُثَيْمِين (Archive.org)"}
         {(view === "prayer" || view === "qibla") && "المَصْدَرُ: مَوَاقِيتُ AlAdhan.com — طَرِيقَةُ رَابِطَةِ العَالَمِ الإِسْلَامِيِّ — الأَذَانُ: IslamCan"}
         {view === "home" && "القُرْآنُ: الشَّيْخُ العَجَمِي • الأَذْكَارُ: الشَّيْخُ العَفَاسِي • الدُّرُوسُ: الشَّيْخُ ابْنُ عُثَيْمِين • المَوَاقِيتُ: AlAdhan"}
