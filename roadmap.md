@@ -1,4 +1,4 @@
 # Roadmap
-- [ ] Companion: rename card; fixed dua/hadith list with sources; Quran word meanings citing التفسير الميسر; no fatwa; neutral address
-- [ ] Athkar: preload on entering, loading indicator until audio starts, chime + vibration on tap
-- [ ] Quran: all 114 surahs by voice (incl. يس), dialect repeat words replay current verse + vibration
+- [x] Companion: fixed dua/hadith list, Quran word meanings, no fatwa, neutral address
+- [x] Athkar: preload, loader, chime + vibration
+- [x] Quran: 114 surahs by voice, dialect repeat words
