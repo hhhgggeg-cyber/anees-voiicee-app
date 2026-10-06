@@ -1,3 +1,4 @@
+import { DUAS, findDua, isFatwa, isMeaningQ } from "@/lib/duas";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -177,7 +178,16 @@ function Anees() {
     playQueue(s.ayahs.map((a) => ({ url: a.audio, label: `${s.name} — آية ${a.numberInSurah}` })));
   }, [playQueue]);
 
-  const openAthkar = (k: string) => { setView("athkar"); setAthkarKey(k); playQueue(ATHKAR[k]!.tracks); };
+  const preloaded = useRef<HTMLAudioElement[]>([]);
+  const openAthkar = (k: string) => {
+    vibrate(); setView("athkar"); setAthkarKey(k);
+    if (!preloaded.current.length) preloaded.current = Object.values(ATHKAR).flatMap((c) => c.tracks).map((t) => { const x = new Audio(); x.preload = "auto"; x.src = t.url; return x; });
+    startLoading("جَارٍ التَّحْضِيرُ... لَحْظَةً مِنْ فَضْلِكَ");
+    const a = audioRef.current;
+    a?.addEventListener("playing", () => setLoading(""), { once: true });
+    setTimeout(() => setLoading((l) => (l.startsWith("جَارٍ التَّحْضِيرُ") ? "" : l)), 20000);
+    playQueue(ATHKAR[k]!.tracks);
+  };
   const [lesson, setLesson] = useState(0);
   const playLesson = (i: number) => {
     const n = ((i % RADIO.length) + RADIO.length) % RADIO.length;
@@ -240,37 +250,24 @@ function Anees() {
     setView("companion");
     const msgs = [...chatRef.current, { role: "user" as const, content: text.slice(0, 600) }].slice(-12);
     chatRef.current = msgs; setChat(msgs);
-    startLoading("أَنِيس يُفَكِّرُ فِي رَدٍّ طَيِّبٍ...");
+    const add = (content: string) => { chatRef.current = [...chatRef.current, { role: "assistant", content }]; setChat(chatRef.current); };
+    // Supplications & hadiths: only from the fixed verified list, shown as text with source (never AI-generated or AI-voiced).
+    const dua = !isFatwa(text) && !isMeaningQ(text) ? findDua(text) : null;
+    if (dua) { vibrate(); chime(1); add(`${dua.title}:\n${dua.text}\nالمصدر: ${dua.source}`); listenLater(4000); return; }
+    startLoading("جَارٍ البَحْثُ...");
     try {
-      const r = await fetch("/api/companion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: msgs }) });
-      const d = await r.json() as { reply?: string; error?: string; action?: string };
+      const r = await fetch("/api/companion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [msgs[msgs.length - 1]] }) });
+      const d = await r.json() as { reply?: string; error?: string };
       if (!d.reply) throw new Error(d.error ?? "");
-      chatRef.current = [...msgs, { role: "assistant", content: d.reply }]; setChat(chatRef.current);
-      setLoading("");
-      const act = d.action ?? "none";
-      if (act === "none") { speak(d.reply, d.reply); return; }
-      // Short spoken welcome, then the approved recording by the sheikh (never AI voice for dua/athkar/Quran).
-      let recorded: Track[] = act === "fatiha" ? [] : ATHKAR[act]?.tracks ?? [];
-      if (act === "fatiha") {
-        try {
-          const q = await fetch("https://api.alquran.cloud/v1/surah/1/ar.ahmedajamy").then((x) => x.json());
-          recorded = (q.data.ayahs as { audio: string; numberInSurah: number }[]).map((a) => ({ url: a.audio, label: `سورة الفاتحة — آية ${a.numberInSurah} (الشيخ أحمد العجمي)` }));
-        } catch { /* fall through */ }
-      }
-      let intro: Track[] = [];
-      try {
-        const t = await fetch("/api/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: d.reply }) });
-        if (t.ok) intro = [{ url: URL.createObjectURL(await t.blob()), label: d.reply }];
-      } catch { /* skip intro */ }
-      playQueue([...intro, ...recorded]);
+      add(d.reply); setLoading(""); speak(d.reply, d.reply);
     } catch (e) {
       setLoading(""); chime(1); setNotice((e as Error).message || "تعذّر الرد الآن، حاول مرة أخرى"); listenLater(1500);
     }
-  }, [speak, listenLater, playQueue]);
+  }, [speak, listenLater]);
   const openCompanion = () => {
     setView("companion");
     if (!chatRef.current.length) {
-      const hi = "أهلاً وسهلاً، أنا أنيس رفيقك. كيف حالك اليوم؟ تكلّم معي بما في خاطرك.";
+      const hi = "أهلاً وسهلاً. اسأل عن دعاء مثل الشفاء أو تفريج الهم أو السفر، أو عن معنى كلمة في القرآن.";
       chatRef.current = [{ role: "assistant", content: hi }]; setChat(chatRef.current); speak(hi, hi);
     } else startListening();
   };
@@ -348,13 +345,17 @@ function Anees() {
   handleRef.current = (raw: string) => {
     const t = normalizeAr(raw);
     const has = (...w: string[]) => w.some((x) => t.includes(normalizeAr(x)));
-    if (has("تكرار", "كرر", "اعاده")) { toggleRepeat(); return; }
+    if (has("تكرار", "كرر", "اعاده", "عاود", "عاودها", "اعد", "اعيد", "مره ثانيه", "مره تانيه", "كمان مره", "زيدها")) {
+      const a = audioRef.current; vibrate(80);
+      if (a && a.src) { a.currentTime = 0; a.play().catch(() => {}); } else toggleRepeat();
+      return;
+    }
     if (has("توقف", "اسكت", "قف")) { stopAudio(); return; }
     if (has("الرئيسيه", "رجوع")) { stopAudio(); setView("home"); return; }
     // Surah by name anywhere in a natural sentence ("افتحلي سورة الملك", "ابي اسمع يس")
     const strip = (x: string) => normalizeAr(x).replace(/^سوره\s*/, "").replace(/^ال/, "");
     const words = t.split(/\s+/).map((w) => w.replace(/^(و|ف)?ال/, ""));
-    const named = surahs.find((x) => { const n = strip(x.name); return n.length >= 2 && (has("سوره") ? words.includes(n) || t.includes("سوره " + normalizeAr(x.name).replace(/^سوره\s*/, "")) : n.length >= 3 && words.includes(n)); });
+    const named = surahs.find((x) => { const n = strip(x.name); return n.length >= 2 && (has("سوره") ? words.includes(n) || t.includes("سوره " + normalizeAr(x.name).replace(/^سوره\s*/, "")) : n.length >= 2 && words.includes(n)); });
     if (named && !has("اذكار", "ذكر")) { openSurah(named.number); return; }
     if (has("رفيق", "ونسني", "سولف", "احكي معي", "تكلم معي", "كلمني", "دردش")) { if (view !== "companion") openCompanion(); return; }
     const wantsNav = has("سوره", "اذكار", "ذكر", "مواقيت", "اذان", "قبله", "قران", "درس", "حلقه", "شغل", "افتح", "سمعني", "قريلي");
@@ -425,7 +426,7 @@ function Anees() {
           <Card title="الأَذْكَارُ" sub="الشَّيْخُ مِشَارِي العَفَاسِي" icon="📿" onClick={() => openAthkar("morning")} />
           <Card title="المُحَاضَرَاتُ (رَادْيُو الدُّرُوسِ وَالمَوَاعِظِ)" sub="الشَّيْخُ ابْنُ عُثَيْمِين" icon="📻" onClick={openRadio} />
           <Card title="مَوَاقِيتُ الصَّلَاةِ وَالقِبْلَةِ" sub={coords ? "📍 مَوْقِعُكَ الحَالِيُّ" : city?.ar ?? "حَسَبَ مَوْقِعِكَ"} icon="🕌" onClick={openPrayer} />
-          <Card title="أَنِيسُ الرَّفِيقُ" sub="تَكَلَّمْ مَعِي.. وَنَسٌ وَدُعَاءٌ" icon="🤲" onClick={openCompanion} />
+          <Card title="رَفِيقُ أَنِيس" sub="أَدْعِيَةٌ، وَمَعَانِي كَلِمَاتِ القُرْآنِ، أَحَادِيثٌ" icon="🤲" onClick={openCompanion} />
         </div>
       )}
 
@@ -466,18 +467,17 @@ function Anees() {
 
       {view === "companion" && (
         <section className="rounded-3xl border-4 border-gold bg-card p-6 text-card-foreground shadow-xl">
-          <h2 className="text-3xl font-bold">🤲 أَنِيسُ الرَّفِيقُ</h2>
-          <p className="mb-4 text-xl text-muted-foreground">تَكَلَّمْ بِمَا فِي خَاطِرِكَ — وَنَسٌ، أَدْعِيَةٌ، وَمَعَانِي كَلِمَاتِ القُرْآنِ</p>
+          <h2 className="text-3xl font-bold">🤲 رَفِيقُ أَنِيس</h2>
+          <p className="mb-4 text-xl text-muted-foreground">أَدْعِيَةٌ، وَمَعَانِي كَلِمَاتِ القُرْآنِ، أَحَادِيثٌ — قُلْ مَثَلاً: «دُعَاءُ الشِّفَاءِ» أَوْ «مَا مَعْنَى الصَّمَدِ»</p>
           <div className="grid gap-3">
             {chat.map((m, i) => (
-              <p key={i} className={`rounded-2xl p-4 text-2xl leading-relaxed ${m.role === "assistant" ? "border-2 border-gold bg-muted" : "bg-primary text-primary-foreground"}`}>
+              <p key={i} className={`rounded-2xl p-4 whitespace-pre-line text-2xl leading-relaxed ${m.role === "assistant" ? "border-2 border-gold bg-muted" : "bg-primary text-primary-foreground"}`}>
                 {m.role === "assistant" ? "أَنِيس: " : "أَنْتَ: "}{m.content}
               </p>
             ))}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <BigBtn onClick={() => askCompanion("أنا تعبان ومريض، شغل لي ما يناسب طلب الشفاء")}>🤍 لِلشِّفَاءِ</BigBtn>
-            <BigBtn onClick={() => askCompanion("أنا متضايق ومهموم، شغل لي ما يريحني")}>🌿 عِنْدَ الضِّيقِ</BigBtn>
+            {DUAS.slice(0, 8).map((d) => <BigBtn key={d.id} onClick={() => askCompanion(d.keys[0]!)}>{d.title}</BigBtn>)}
           </div>
           <p className="mt-4 text-center text-lg text-muted-foreground">أَنِيس رَفِيقٌ إِيمَانِيٌّ وَلَا يُفْتِي — لِلْفَتْوَى يُرْجَى سُؤَالُ أَهْلِ العِلْمِ</p>
         </section>
@@ -564,7 +564,7 @@ function Anees() {
       <footer className="mt-auto border-t-2 border-gold/40 pt-4 text-center text-base leading-relaxed opacity-80">
         {view === "quran" && "المَصْدَرُ: نَصُّ المُصْحَفِ العُثْمَانِيِّ (Tanzil عبر AlQuran.cloud) — التِّلَاوَةُ: الشَّيْخُ أَحْمَدُ العَجَمِي (Islamic Network)"}
         {view === "athkar" && "المَصْدَرُ: أَذْكَارُ حِصْنِ المُسْلِمِ بِصَوْتِ الشَّيْخِ مِشَارِي العَفَاسِي (أَرْشِيفُ الإِنْتَرْنِت Archive.org)"}
-        {view === "companion" && "مَعَانِي الكَلِمَاتِ: التَّفْسِيرُ المُيَسَّرُ — مُجَمَّعُ المَلِكِ فَهْدٍ • الأَذْكَارُ بِصَوْتِ الشَّيْخِ مِشَارِي العَفَاسِي وَالقُرْآنُ بِصَوْتِ الشَّيْخِ أَحْمَدَ العَجَمِي"}
+        {view === "companion" && "مَعَانِي الكَلِمَاتِ: التَّفْسِيرُ المُيَسَّرُ — مُجَمَّعُ المَلِكِ فَهْدٍ • الأَدْعِيَةُ وَالأَحَادِيثُ: حِصْنُ المُسْلِمِ وَالصَّحِيحَانِ"}
         {view === "radio" && "المَصْدَرُ: فَتَاوَى نُورٌ عَلَى الدَّرْبِ — المَكْتَبَةُ الصَّوْتِيَّةُ لِلشَّيْخِ ابْنِ عُثَيْمِين (Archive.org)"}
         {(view === "prayer" || view === "qibla") && "المَصْدَرُ: مَوَاقِيتُ AlAdhan.com — طَرِيقَةُ رَابِطَةِ العَالَمِ الإِسْلَامِيِّ — الأَذَانُ: IslamCan"}
         {view === "home" && "القُرْآنُ: الشَّيْخُ العَجَمِي • الأَذْكَارُ: الشَّيْخُ العَفَاسِي • الدُّرُوسُ: الشَّيْخُ ابْنُ عُثَيْمِين • المَوَاقِيتُ: AlAdhan"}
@@ -589,6 +589,8 @@ function lessonNumber(t: string): number | null {
   for (const [forms, n] of NUM_WORDS) if (forms.some((f) => new RegExp(`(^|\\s)${f}(\\s|$)`).test(words))) return n;
   return null;
 }
+
+function vibrate(ms = 40) { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } }
 
 function fmt12(hm: string) {
   const [h, m] = hm.split(" ")[0]!.split(":").map(Number) as [number, number];
