@@ -253,7 +253,7 @@ function Anees() {
     const add = (content: string) => { chatRef.current = [...chatRef.current, { role: "assistant", content }]; setChat(chatRef.current); };
     // Supplications & hadiths: only from the fixed verified list, shown as text with source (never AI-generated or AI-voiced).
     const dua = !isFatwa(text) && !isMeaningQ(text) ? findDua(text) : null;
-    if (dua) { vibrate(); chime(1); add(`${dua.title}:\n${dua.text}\nالمصدر: ${dua.source}`); listenLater(4000); return; }
+    if (dua) { vibrate(); add(`${dua.title}:\n${dua.text}\nالمصدر: ${dua.source}`); speak(`${dua.title}. ${dua.text}`, dua.title); return; }
     startLoading("جَارٍ البَحْثُ...");
     try {
       const r = await fetch("/api/companion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [msgs[msgs.length - 1]] }) });
@@ -352,6 +352,10 @@ function Anees() {
     }
     if (has("توقف", "اسكت", "قف")) { stopAudio(); return; }
     if (has("الرئيسيه", "رجوع")) { stopAudio(); setView("home"); return; }
+    // Phonetically tricky surahs → exact surah number
+    const SYN: [string[], number][] = [[["يا سين", "ياسين", "يس"], 36], [["عبس وتولي", "عبس"], 80]];
+    const syn = SYN.find(([ws]) => ws.some((w) => new RegExp(`(^|\\s)(سوره\\s*)?${w}(\\s|$)`).test(t)));
+    if (syn && !has("اذكار")) { vibrate(); openSurah(syn[1]); return; }
     // Surah by name anywhere in a natural sentence ("افتحلي سورة الملك", "ابي اسمع يس")
     const strip = (x: string) => normalizeAr(x).replace(/^سوره\s*/, "").replace(/^ال/, "");
     const words = t.split(/\s+/).map((w) => w.replace(/^(و|ف)?ال/, ""));

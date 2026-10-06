@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-const Body = z.object({ text: z.string().min(1).max(300) });
+const Body = z.object({ text: z.string().min(1).max(700) });
 
-// Spoken replies for prayer times & Qibla only (Arabic TTS via Lovable AI Gateway).
+// Spoken replies (prayer times, Qibla, Anees companion) (Arabic TTS via Lovable AI Gateway).
 export const Route = createFileRoute("/api/speak")({
   server: {
     handlers: {
