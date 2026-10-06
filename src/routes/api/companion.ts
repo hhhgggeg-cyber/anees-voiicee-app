@@ -1,38 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { FATWA_REPLY, NOT_FOUND, isFatwa, isMeaningQ } from "@/lib/duas";
 
 const Body = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(600) })).min(1).max(20),
 });
 
-export const FATWA_REPLY =
-  "عذراً، أنا رفيق إيماني ولستُ عالماً للإفتاء. يُرجى استشارة دار الإفتاء أو أهل العلم المختصين. هل تحب تشغيل أذكار الصباح أو القرآن الكريم؟";
-
-const norm = (s: string) =>
-  s.replace(/[\u064B-\u065F\u0670\u0640]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
-// Hard guardrail: any ruling/fatwa question is refused before reaching the model.
-const FATWA = ["حكم", "حلال", "حرام", "يجوز", "جايز", "فتوي", "افتني", "مكروه", "واجب", "فرض", "سنه ام", "مباح", "شرعا", "يبطل", "تبطل", "باطل", "زكاه كم", "كفاره", "ينفع اصلي", "هل علي"];
-const isFatwa = (t: string) => FATWA.some((w) => norm(t).includes(norm(w)));
-
-const ACTIONS = ["morning", "evening", "sleep", "wird", "fatiha", "none"] as const;
-type Action = (typeof ACTIONS)[number];
-
-const SYSTEM = `أنت "أَنِيس الرفيق"، رفيق إيماني لطيف لكبار السن من الرجال والنساء. تكلّم بعربية بسيطة دافئة بخطاب محايد تماماً: لا تستخدم أي لقب أو نداء (لا "يا حاج" ولا "يا حاجة" ولا غيرها)، وتجنّب صيغ التذكير والتأنيث قدر الإمكان.
-مهامك فقط:
-1) الونس والدعم النفسي بكلام طيب قصير من عندك (بدون أي نص ديني).
-2) توضيح معنى كلمة غريبة في القرآن فقط اعتماداً على "التفسير الميسر"، وإن لم تكن متأكداً فقل ذلك بلطف.
-ممنوع منعاً باتاً: كتابة أو قراءة أي دعاء أو ذكر أو حديث أو آية بنفسك، أو تأليف أدعية جديدة. بدلاً من ذلك اختر تسجيلاً معتمداً مسجلاً بصوت الشيوخ ليُشغَّل فوراً، وردّك يكون ترحيباً بسيطاً فقط مثل "حاضر، إليك أذكار النوم بصوت الشيخ مشاري العفاسي".
-التسجيلات المتاحة (اختر واحداً عند الحاجة):
-- morning: أذكار الصباح (العفاسي)
-- evening: أذكار المساء (العفاسي)
-- sleep: أذكار النوم (العفاسي)
-- wird: أذكار أطراف النهار والورد اليومي (العفاسي) — مناسب للضيق والهم والقلق
-- fatiha: سورة الفاتحة (الشيخ أحمد العجمي) — مناسب لطلب الشفاء والمرض
-- none: لا تشغيل
-ممنوع منعاً باتاً: الفتوى أو أحكام الحلال والحرام أو الأسئلة الفقهية أو الرأي الشرعي. إن سُئلت عن حكم فرد حرفياً بهذا النص فقط: "${FATWA_REPLY}" مع none.
-لا تتكلم في السياسة أو التشخيص الطبي؛ انصح بمراجعة الطبيب بلطف.
-الرد قصير جداً: جملة أو جملتان، أقل من 35 كلمة، نص عادي بلا رموز.
-في نهاية ردك اكتب سطراً أخيراً بالضبط بهذا الشكل: [[ACTION:الاسم]]`;
+const SYSTEM = `أنت مساعد مختص فقط بتوضيح معاني الكلمات الغريبة في القرآن الكريم اعتماداً على "التفسير الميسر" (مجمع الملك فهد).
+- أجب إجابة مباشرة مقتضبة (جملة واحدة أو اثنتان، أقل من 30 كلمة) عن معنى الكلمة المسؤول عنها فقط، ثم اختم بعبارة: "المصدر: التفسير الميسر".
+- خطاب محايد تماماً بلا ألقاب أو نداءات، مناسب للرجال والنساء.
+- لا تكتب أدعية ولا أحاديث ولا تفسيراً موسعاً ولا أي رأي أو حكم شرعي أو فتوى.
+- إن لم يكن السؤال عن معنى كلمة قرآنية، أو لم تكن متأكداً من معناها في التفسير الميسر، فأجب حرفياً: "${NOT_FOUND}"`;
 
 export const Route = createFileRoute("/api/companion")({
   server: {
@@ -42,7 +20,8 @@ export const Route = createFileRoute("/api/companion")({
         if (!parsed.success) return Response.json({ error: "طلب غير صالح" }, { status: 400 });
         const msgs = parsed.data.messages;
         const last = msgs[msgs.length - 1]!;
-        if (last.role === "user" && isFatwa(last.content)) return Response.json({ reply: FATWA_REPLY, action: "none", fatwa: true });
+        if (isFatwa(last.content)) return Response.json({ reply: FATWA_REPLY, fatwa: true });
+        if (!isMeaningQ(last.content)) return Response.json({ reply: NOT_FOUND });
         const apiKey = process.env["LOVABLE_API_KEY"];
         if (!apiKey) return Response.json({ error: "الخدمة غير مهيأة" }, { status: 500 });
         const upstream = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
@@ -52,7 +31,7 @@ export const Route = createFileRoute("/api/companion")({
           body: JSON.stringify({
             model: "openai/gpt-6-astra",
             instructions: SYSTEM,
-            input: msgs.map((m) => ({ role: m.role, content: m.content })),
+            input: [{ role: "user", content: last.content }],
             stream: true,
             store: false,
             reasoning: { effort: "low", summary: "auto" },
@@ -86,11 +65,8 @@ export const Route = createFileRoute("/api/companion")({
             } catch { /* partial */ }
           }
         }
-        if (refused || !text.trim()) return Response.json({ reply: FATWA_REPLY, action: "none" });
-        const m = text.match(/\[\[ACTION:\s*(\w+)\s*\]\]/);
-        const action: Action = m && (ACTIONS as readonly string[]).includes(m[1]!) ? (m[1] as Action) : "none";
-        const reply = text.replace(/\[\[ACTION:[^\]]*\]\]/g, "").replace(/يا\s*حاج(ه|ة)?/g, "").trim().slice(0, 290);
-        return Response.json({ reply, action });
+        if (refused || !text.trim()) return Response.json({ reply: NOT_FOUND });
+        return Response.json({ reply: text.replace(/يا\s*حاج(ه|ة)?[،,]?\s*/g, "").trim().slice(0, 290) });
       },
     },
   },

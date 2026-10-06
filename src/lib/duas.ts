@@ -60,3 +60,8 @@ export function findDua(q: string): Dua | null {
 }
 
 export const NOT_FOUND = "ليس لدي نص محدد لهذا، جرّب تسأل عن موضوع آخر.";
+
+const FATWA = ["حكم", "حلال", "حرام", "يجوز", "جايز", "فتوي", "افتني", "مكروه", "واجب", "فرض", "مباح", "شرعا", "يبطل", "تبطل", "باطل", "كفاره", "ينفع اصلي", "هل علي"];
+export const isFatwa = (t: string) => FATWA.some((w) => norm(t).includes(norm(w)));
+export const isMeaningQ = (t: string) => ["معني", "معنى", "يعني", "تفسير كلمه", "شو معنى", "وش معنى"].some((w) => norm(t).includes(norm(w)));
+export const FATWA_REPLY = "عذراً، أنا رفيق إيماني ولستُ عالماً للإفتاء. يُرجى استشارة دار الإفتاء أو أهل العلم المختصين. هل تحب تشغيل أذكار الصباح أو القرآن الكريم؟";
